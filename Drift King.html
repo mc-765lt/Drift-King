@@ -1,0 +1,2340 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drift King (DK) - Playable Prototype</title>
+    <!-- Tailwind CSS (UI用) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome (アイコン用) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js (3D描画用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        #game-container canvas { display: block; width: 100vw; height: 100vh; }
+        #minimap { width: 150px; height: 150px; }
+        .racing-text { text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, -1px 1px 0 #000; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* ★ メーター用の激しい振動アニメーション（TYPE-S 限界突破用） */
+        @keyframes meter-shake {
+            0% { transform: translate(2px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-2px, 0px) rotate(1deg); }
+            30% { transform: translate(2px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-2px, 1px) rotate(0deg); }
+            70% { transform: translate(2px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+        .animate-meter-shake { animation: meter-shake 0.1s infinite; }
+
+        /* ★ TYPE-B ニトロ発動用の赤炎バーストアニメーションに変更 */
+        @keyframes nitro-burst {
+            0% { transform: scale(1.1) translate(1px, 1px); box-shadow: 0 0 20px #ff0000, inset 0 0 10px #ff0000; border-color: #ff3333; }
+            50% { transform: scale(1.15) translate(-1px, -1px); box-shadow: 0 0 50px #ff3333, inset 0 0 30px #ff3333; border-color: #ffffff; }
+            100% { transform: scale(1.1) translate(1px, -1px); box-shadow: 0 0 20px #ff0000, inset 0 0 10px #ff0000; border-color: #ff3333; }
+        }
+        .animate-nitro-burst { animation: nitro-burst 0.1s infinite; }
+    </style>
+</head>
+<body>
+
+    <!-- 音声トグルボタン -->
+    <div class="absolute top-4 right-4 z-50 pointer-events-auto">
+        <button id="btnToggleAudio" class="bg-black/70 hover:bg-black/90 text-white p-3 rounded-full border border-gray-500/50 shadow-lg transition-colors w-12 h-12 flex items-center justify-center">
+            <i id="audioIcon" class="fa-solid fa-volume-high"></i>
+        </button>
+    </div>
+
+    <!-- 車両選択オーバーレイUI -->
+    <div id="carSelectModal" class="absolute inset-0 bg-black/90 backdrop-blur-md z-30 flex flex-col items-center justify-center p-3 transition-all duration-500">
+        <div class="max-w-6xl w-full text-center space-y-3 my-auto pointer-events-auto flex flex-col items-center">
+            <h2 id="modalTitle" class="text-2xl md:text-4xl font-black italic text-white racing-text tracking-wider mb-2">SELECT YOUR MACHINE</h2>
+            
+            <!-- STEP 1: 車両一覧 -->
+            <div id="carSelectionList" class="grid grid-cols-3 gap-2 md:gap-4 max-h-[75vh] w-full">
+                <!-- 車両1: TYPE-S -->
+                <div onclick="showPreview('speed')" class="group bg-neutral-950/95 hover:bg-neutral-900 border-2 border-yellow-500 rounded-lg p-2 md:p-4 text-left cursor-pointer transition-all duration-300 transform hover:scale-[1.02] hover:shadow-[0_0_15px_rgba(234,179,8,0.4)] flex flex-col justify-between h-56 md:h-64">
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="bg-yellow-500 text-black text-[9px] md:text-[10px] font-black px-1.5 md:px-2.5 py-0.5 rounded-full">TYPE-S</span>
+                            <i class="fa-solid fa-plane text-sm md:text-lg text-yellow-500 group-hover:animate-pulse"></i>
+                        </div>
+                        <h3 class="text-sm md:text-xl font-black text-white truncate">SPEED DEVIL</h3>
+                        <p class="text-[8px] md:text-[10px] text-yellow-500 font-semibold mb-2 truncate">最高速400km/h・直線番長</p>
+                    </div>
+                    
+                    <div class="space-y-1.5 text-[8px] md:text-[10px]">
+                        <div class="space-y-0.5">
+                            <div class="flex justify-between text-gray-400"><span>SPEED</span><span class="text-yellow-500 font-bold">400 km/h</span></div>
+                            <div class="w-full bg-neutral-800 h-1 md:h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-yellow-500 h-full w-[100%] rounded-full"></div>
+                            </div>
+                        </div>
+                        <div class="space-y-0.5">
+                            <div class="flex justify-between text-gray-400"><span>SPECIAL</span><span class="text-yellow-400 font-bold">AERO BOOST</span></div>
+                            <div class="w-full bg-neutral-800 h-1 md:h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-yellow-400 h-full w-[100%] rounded-full"></div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between items-center text-gray-400 mt-2 border-t border-neutral-800 pt-1.5">
+                            <span>DIFFICULTY</span>
+                            <span class="text-red-500 font-bold tracking-wider">HARD ★★★</span>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-center bg-yellow-500 text-black py-1 rounded font-black text-[9px] md:text-xs group-hover:bg-yellow-400 transition-colors uppercase tracking-wider truncate">
+                        アクセルキープで限界突破
+                    </div>
+                </div>
+
+                <!-- 車両2: TYPE-B -->
+                <div onclick="showPreview('balance')" class="group bg-neutral-950/95 hover:bg-neutral-900 border-2 border-red-600 rounded-lg p-2 md:p-4 text-left cursor-pointer transition-all duration-300 transform hover:scale-[1.02] hover:shadow-[0_0_15px_rgba(220,38,38,0.4)] flex flex-col justify-between h-56 md:h-64">
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="bg-red-600 text-white text-[9px] md:text-[10px] font-black px-1.5 md:px-2.5 py-0.5 rounded-full">TYPE-B</span>
+                            <i class="fa-solid fa-fire text-sm md:text-lg text-red-500 group-hover:animate-pulse"></i>
+                        </div>
+                        <h3 class="text-sm md:text-xl font-black text-white truncate">DK CLASSIC</h3>
+                        <p class="text-[8px] md:text-[10px] text-red-500 font-semibold mb-2 truncate">安定加速・ストックニトロ</p>
+                    </div>
+                    
+                    <div class="space-y-1.5 text-[8px] md:text-[10px]">
+                        <div class="space-y-0.5">
+                            <div class="flex justify-between text-gray-400"><span>SPEED</span><span class="text-red-500 font-bold">370 km/h</span></div>
+                            <div class="w-full bg-neutral-800 h-1 md:h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-red-500 h-full w-[80%] rounded-full"></div>
+                            </div>
+                        </div>
+                        <div class="space-y-0.5">
+                            <div class="flex justify-between text-gray-400"><span>SPECIAL</span><span class="text-red-500 font-bold">STOCK NITRO</span></div>
+                            <div class="w-full bg-neutral-800 h-1 md:h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-red-500 h-full w-[100%] rounded-full"></div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between items-center text-gray-400 mt-2 border-t border-neutral-800 pt-1.5">
+                            <span>DIFFICULTY</span>
+                            <span class="text-green-400 font-bold tracking-wider">EASY ★☆☆</span>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-center bg-red-600 text-white py-1 rounded font-black text-[9px] md:text-xs group-hover:bg-red-500 transition-colors uppercase tracking-wider truncate">
+                        [Shift] または [Space] で発動
+                    </div>
+                </div>
+
+                <!-- 車両3: TYPE-M -->
+                <div onclick="showPreview('handling')" class="group bg-neutral-950/95 hover:bg-neutral-900 border-2 border-cyan-500 rounded-lg p-2 md:p-4 text-left cursor-pointer transition-all duration-300 transform hover:scale-[1.02] hover:shadow-[0_0_15px_rgba(6,182,212,0.4)] flex flex-col justify-between h-56 md:h-64">
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="bg-cyan-500 text-black text-[9px] md:text-[10px] font-black px-1.5 md:px-2.5 py-0.5 rounded-full">TYPE-M</span>
+                            <i class="fa-solid fa-bolt text-sm md:text-lg text-cyan-500 group-hover:animate-pulse"></i>
+                        </div>
+                        <h3 class="text-sm md:text-xl font-black text-white truncate">CYBER GRIPPER</h3>
+                        <p class="text-[8px] md:text-[10px] text-cyan-500 font-semibold mb-2 truncate">コーナー極化・一撃ターボ</p>
+                    </div>
+                    
+                    <div class="space-y-1.5 text-[8px] md:text-[10px]">
+                        <div class="space-y-0.5">
+                            <div class="flex justify-between text-gray-400"><span>SPEED</span><span class="text-cyan-400 font-bold">350 km/h</span></div>
+                            <div class="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-cyan-500 h-full w-[60%] rounded-full"></div>
+                            </div>
+                        </div>
+                        <div class="space-y-0.5">
+                            <div class="flex justify-between text-gray-400"><span>SPECIAL</span><span class="text-purple-400 font-bold">DRIFT TURBO</span></div>
+                            <div class="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-purple-500 h-full w-[100%] rounded-full"></div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between items-center text-gray-400 mt-2 border-t border-neutral-800 pt-1.5">
+                            <span>DIFFICULTY</span>
+                            <span class="text-yellow-400 font-bold tracking-wider">NORMAL ★★☆</span>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-center bg-cyan-500 text-black py-1 rounded font-black text-[9px] md:text-xs group-hover:bg-cyan-400 transition-colors uppercase tracking-wider truncate">
+                        「GO!」で隠しダッシュ
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: プレビュー＆カスタマイズ＆ミッションパネル -->
+            <div id="carPreviewPanel" class="hidden text-white w-full grid grid-cols-1 lg:grid-cols-12 gap-4 text-left">
+                <!-- 左側：スペック・カラー・ミッションUI -->
+                <div class="lg:col-span-5 bg-neutral-950/85 border border-neutral-800 rounded-xl p-4 md:p-6 shadow-2xl backdrop-blur-md flex flex-col justify-between max-h-[85vh] overflow-y-auto no-scrollbar gap-4">
+                    <div>
+                        <div class="flex justify-between items-center border-b border-neutral-800 pb-2">
+                            <h2 id="previewName" class="text-2xl md:text-3xl font-black italic racing-text text-yellow-400">MACHINE NAME</h2>
+                        </div>
+                        <p id="previewDesc" class="text-gray-400 text-[11px] md:text-xs mt-2 font-medium leading-relaxed">説明文</p>
+                    </div>
+                    
+                    <!-- スペックバー -->
+                    <div class="space-y-2.5 font-mono text-[10px] md:text-xs font-bold">
+                        <div class="flex items-center">
+                            <span class="w-24 text-gray-500">MAX SPEED</span>
+                            <div class="flex-1 bg-neutral-900 h-2 rounded-full overflow-hidden"><div id="barSpeed" class="bg-blue-500 h-full transition-all duration-1000 ease-out" style="width: 0%"></div></div>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="w-24 text-gray-500">ACCEL</span>
+                            <div class="flex-1 bg-neutral-900 h-2 rounded-full overflow-hidden"><div id="barAccel" class="bg-red-500 h-full transition-all duration-1000 ease-out" style="width: 0%"></div></div>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="w-24 text-gray-500">HANDLING</span>
+                            <div class="flex-1 bg-neutral-900 h-2 rounded-full overflow-hidden"><div id="barHandling" class="bg-green-500 h-full transition-all duration-1000 ease-out" style="width: 0%"></div></div>
+                        </div>
+                    </div>
+
+                    <!-- 操作説明 -->
+                    <div class="bg-black/40 border border-neutral-800/80 rounded-lg p-3">
+                        <div class="text-[11px] font-black text-gray-400 mb-2">
+                            <i class="fa-solid fa-gamepad text-cyan-400 mr-1"></i> HOW TO PLAY
+                        </div>
+                        <div class="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[10px] font-mono">
+                            <div><span class="text-neutral-500 w-12 inline-block">ACCEL:</span><span class="text-yellow-400 font-bold">W / ↑</span></div>
+                            <div><span class="text-neutral-500 w-12 inline-block">BRAKE:</span><span class="text-yellow-400 font-bold">S / ↓</span></div>
+                            <div><span class="text-neutral-500 w-12 inline-block">STEER:</span><span class="text-yellow-400 font-bold">A,D / ←,→</span></div>
+                            <div><span class="text-neutral-500 w-12 inline-block">SPECIAL:</span><span id="previewSpecialKey" class="text-red-400 font-bold">Shift/Space</span></div>
+                        </div>
+                    </div>
+
+                    <!-- カラーカスタマイズ -->
+                    <div class="bg-black/40 border border-neutral-800/80 rounded-lg p-3">
+                        <div class="text-[11px] font-black text-gray-400 mb-2 flex items-center justify-between">
+                            <span><i class="fa-solid fa-palette text-cyan-400 mr-1"></i> BODY COLOR CUSTOMIZE</span>
+                            <span class="text-[9px] text-neutral-500">Unlock via Missions</span>
+                        </div>
+                        <div id="colorPickerContainer" class="flex flex-wrap gap-2">
+                            <!-- 動的生成 -->
+                        </div>
+                    </div>
+
+                    <!-- ミッションリスト -->
+                    <div class="bg-black/40 border border-neutral-800/80 rounded-lg p-3">
+                        <div class="text-[11px] font-black text-gray-400 mb-2">
+                            <i class="fa-solid fa-trophy text-yellow-500 mr-1"></i> MISSIONS & REWARDS
+                        </div>
+                        <div id="missionListContainer" class="space-y-2 max-h-40 overflow-y-auto no-scrollbar text-[10px]">
+                            <!-- 動的生成 -->
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button id="btnBackToSelect" onclick="showCarSelectModal()" class="flex-1 text-center bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white font-bold py-2.5 rounded-lg text-xs transition-colors">
+                            <i class="fa-solid fa-chevron-left mr-1"></i> BACK
+                        </button>
+                        <button id="btnStartRace" onclick="showCourseSelectModal()" class="flex-[2] bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 border border-red-500 text-white font-black italic tracking-widest py-2.5 rounded-lg text-sm shadow-[0_0_15px_rgba(220,38,38,0.4)] hover:shadow-[0_0_25px_rgba(220,38,38,0.6)] transition-all transform hover:scale-[1.01]">
+                            NEXT: SELECT COURSE <i class="fa-solid fa-arrow-right ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 右側：カメラ操作ガイド -->
+                <div class="lg:col-span-7 flex flex-col justify-end items-end p-4 pointer-events-none text-right">
+                    <div class="bg-black/60 border border-neutral-800 px-3 py-2 rounded-lg text-[10px] text-gray-300 font-bold backdrop-blur-sm pointer-events-auto shadow-lg">
+                        <i class="fa-solid fa-arrows-spin text-cyan-400 animate-spin mr-1"></i> 3D PREVIEW INTERACTIVE<br>
+                        <span class="text-[9px] text-neutral-400">Drag/Swipe on background to rotate camera</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ★ STEP 3: コース選択オーバーレイUI -->
+    <div id="courseSelectModal" class="hidden absolute inset-0 bg-black/90 backdrop-blur-md z-40 flex-col items-center justify-center p-3 transition-all duration-500 opacity-0 pointer-events-none">
+        <div class="max-w-6xl w-full text-center space-y-4 my-auto pointer-events-auto flex flex-col items-center">
+            <h2 class="text-2xl md:text-4xl font-black italic text-white racing-text tracking-wider mb-2">SELECT STAGE</h2>
+            
+            <div class="grid grid-cols-3 gap-2 md:gap-4 max-h-[75vh] w-full px-1 md:px-4">
+                <!-- コース1：SUZUKA (Mountain) -->
+                <button onclick="selectCourse('suzuka')" class="group bg-neutral-950/95 hover:bg-neutral-900 border-2 border-blue-500 rounded-lg p-2 md:p-4 text-left cursor-pointer transition-all duration-300 transform hover:scale-[1.02] hover:shadow-[0_0_15px_rgba(59,130,246,0.4)] flex flex-col justify-between h-56 md:h-64 relative overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-to-t from-blue-950/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="relative z-10 w-full">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="bg-blue-500 text-white text-[9px] md:text-[10px] font-black px-1.5 md:px-2.5 py-0.5 rounded-full">STAGE 01</span>
+                            <i class="fa-solid fa-mountain text-sm md:text-lg text-blue-400 group-hover:animate-pulse"></i>
+                        </div>
+                        <h3 class="text-sm md:text-xl font-black text-white italic leading-tight">SUZUKA STYLE<br>GRAND PRIX</h3>
+                        <p class="text-[8px] md:text-[10px] text-blue-400 font-semibold mb-1 truncate">DOWNHILL & HILLCLIMB</p>
+                        <div class="text-[9px] font-mono bg-black/60 px-1.5 py-0.5 rounded border border-neutral-800 text-gray-400 inline-block mb-1">BEST: <span id="bestTime_suzuka" class="text-yellow-400 font-bold tracking-widest">--:--.--</span></div>
+                    </div>
+                    <p class="text-[9px] md:text-xs text-gray-400 relative z-10 font-medium leading-relaxed">高低差と連続コーナーが特徴 of テクニカルな山岳ルート。</p>
+                    <div class="relative z-10 mt-2 text-center bg-blue-600 text-white py-1 rounded font-black text-[9px] md:text-xs group-hover:bg-blue-500 transition-colors uppercase tracking-wider truncate w-full">
+                        SELECT STAGE
+                    </div>
+                </button>
+                
+                <!-- コース2：TSUKUBA (Circuit) -->
+                <button onclick="selectCourse('tsukuba')" class="group bg-neutral-950/95 hover:bg-neutral-900 border-2 border-green-500 rounded-lg p-2 md:p-4 text-left cursor-pointer transition-all duration-300 transform hover:scale-[1.02] hover:shadow-[0_0_15px_rgba(34,197,94,0.4)] flex flex-col justify-between h-56 md:h-64 relative overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-to-t from-green-950/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="relative z-10 w-full">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="bg-green-500 text-white text-[9px] md:text-[10px] font-black px-1.5 md:px-2.5 py-0.5 rounded-full">STAGE 02</span>
+                            <i class="fa-solid fa-flag-checkered text-sm md:text-lg text-green-400 group-hover:animate-pulse"></i>
+                        </div>
+                        <h3 class="text-sm md:text-xl font-black text-white italic leading-tight">TSUKUBA STYLE<br>CIRCUIT</h3>
+                        <p class="text-[8px] md:text-[10px] text-green-400 font-semibold mb-1 truncate">FLAT CIRCUIT</p>
+                        <div class="text-[9px] font-mono bg-black/60 px-1.5 py-0.5 rounded border border-neutral-800 text-gray-400 inline-block mb-1">BEST: <span id="bestTime_tsukuba" class="text-yellow-400 font-bold tracking-widest">--:--.--</span></div>
+                    </div>
+                    <p class="text-[9px] md:text-xs text-gray-400 relative z-10 font-medium leading-relaxed">フラットな路面にキツいヘアピンが連続する本格サーキット。</p>
+                    <div class="relative z-10 mt-2 text-center bg-green-600 text-white py-1 rounded font-black text-[9px] md:text-xs group-hover:bg-green-500 transition-colors uppercase tracking-wider truncate w-full">
+                        SELECT STAGE
+                    </div>
+                </button>
+                
+                <!-- コース3：FUJI SPEEDWAY STYLE (High Speed & Technical) -->
+                <button onclick="selectCourse('oval')" class="group bg-neutral-950/95 hover:bg-neutral-900 border-2 border-rose-500 rounded-lg p-2 md:p-4 text-left cursor-pointer transition-all duration-300 transform hover:scale-[1.02] hover:shadow-[0_0_15px_rgba(244,63,94,0.4)] flex flex-col justify-between h-56 md:h-64 relative overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-to-t from-rose-950/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="relative z-10 w-full">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="bg-rose-500 text-white text-[9px] md:text-[10px] font-black px-1.5 md:px-2.5 py-0.5 rounded-full">STAGE 03</span>
+                            <i class="fa-solid fa-mountain-sun text-sm md:text-lg text-rose-400 group-hover:animate-pulse"></i>
+                        </div>
+                        <h3 class="text-sm md:text-xl font-black text-white italic leading-tight">FUJI SPEEDWAY<br>STYLE</h3>
+                        <p class="text-[8px] md:text-[10px] text-rose-400 font-semibold mb-1 truncate">ULTRA LONG STRAIGHT</p>
+                        <div class="text-[9px] font-mono bg-black/60 px-1.5 py-0.5 rounded border border-neutral-800 text-gray-400 inline-block mb-1">BEST: <span id="bestTime_oval" class="text-yellow-400 font-bold tracking-widest">--:--.--</span></div>
+                    </div>
+                    <p class="text-[9px] md:text-xs text-gray-400 relative z-10 font-medium leading-relaxed">富士の麓に広がる超ロングストレートとコーナーの融合。</p>
+                    <div class="relative z-10 mt-2 text-center bg-rose-600 text-white py-1 rounded font-black text-[9px] md:text-xs group-hover:bg-rose-500 transition-colors uppercase tracking-wider truncate w-full">
+                        SELECT STAGE
+                    </div>
+                </button>
+            </div>
+            
+            <button onclick="showCarSelectModal()" class="text-gray-400 hover:text-white font-bold text-xs md:text-sm mt-4 md:mt-6 transition-colors">
+                <i class="fa-solid fa-chevron-left mr-1"></i> BACK TO MACHINE SELECT
+            </button>
+        </div>
+    </div>
+
+    <!-- 画面オーバーレイUI (走行中) -->
+    <div class="absolute inset-0 pointer-events-none flex flex-col justify-between p-6 z-10">
+        <!-- セクタータイム比較UI -->
+        <div id="sectorTimeUI" class="absolute top-28 left-1/2 transform -translate-x-1/2 flex flex-col items-center opacity-0 transition-all duration-300 pointer-events-none z-20">
+            <div id="sectorTitle" class="text-sm font-black italic tracking-widest text-white racing-text uppercase bg-black/50 px-3 py-0.5 rounded-full border border-gray-600">SECTOR 1</div>
+            <div id="sectorDiff" class="text-5xl font-black font-mono tracking-tight mt-1 racing-text drop-shadow-2xl text-white">--</div>
+        </div>
+
+        <div class="flex justify-between items-start w-full">
+            <div class="flex flex-col gap-2">
+                <div class="bg-white/90 backdrop-blur-md rounded-lg p-4 border-l-4 border-red-600 text-gray-900 pointer-events-auto shadow-lg">
+                    <div class="text-xs text-red-600 font-bold uppercase tracking-wider">Current Time</div>
+                    <div id="currentTime" class="text-3xl font-mono font-black">00:00.00</div>
+                </div>
+                <div class="bg-black/85 backdrop-blur-md rounded-lg px-4 py-2.5 border-l-4 border-blue-500 text-white pointer-events-auto shadow-lg flex items-center justify-between">
+                    <span class="text-[10px] text-blue-400 font-extrabold uppercase tracking-widest mr-4">POSITION</span>
+                    <span id="positionText" class="text-2xl font-black italic tracking-tight font-mono text-cyan-400">1st <span class="text-xs text-gray-400 font-normal">/ 8</span></span>
+                </div>
+            </div>
+
+            <div class="text-center">
+                <h1 class="text-4xl font-black italic text-white racing-text tracking-wider">DRIFT KING <span class="bg-red-600 text-white px-2 rounded-sm font-normal text-2xl border-2 border-white">DK</span></h1>
+                <p id="hudCourseName" class="text-sm text-white font-bold racing-text mt-1">SUZUKA STYLE GRAND PRIX | Press <kbd class="px-1.5 py-0.5 bg-white text-black rounded font-bold">R</kbd> to Restart</p>
+            </div>
+
+            <div class="bg-white/90 backdrop-blur-md rounded-lg p-4 border-l-4 border-yellow-500 text-gray-900 pointer-events-auto shadow-lg">
+                <div class="text-xs text-yellow-600 font-bold uppercase tracking-wider">Best Time (1 Lap)</div>
+                <div id="bestTime" class="text-3xl font-mono font-black">--:--.--</div>
+            </div>
+        </div>
+
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+            <div id="announcement" class="text-8xl font-black italic tracking-widest text-white racing-text transition-all duration-300 transform scale-50 opacity-0 font-mono">
+                READY
+            </div>
+        </div>
+
+        <div class="flex justify-between items-end w-full">
+            <div id="controlsHelp" class="bg-black/70 backdrop-blur-sm rounded-lg p-4 border border-gray-600 text-gray-200 text-xs space-y-1 pointer-events-auto max-w-xs shadow-lg transition-all duration-500 opacity-100 flex flex-col">
+                <div class="font-bold text-white mb-1"><i class="fa-solid fa-car mr-1 text-red-400"></i> Circuit Controls:</div>
+                <div class="flex justify-between"><span>Accelerate:</span><span class="font-mono text-yellow-400">W / ↑</span></div>
+                <div class="flex justify-between"><span>Steer Left / Right:</span><span class="font-mono text-yellow-400">A, D / ←, →</span></div>
+                <div class="flex justify-between"><span>Brake/Reverse:</span><span class="font-mono text-yellow-400">S / ↓</span></div>
+                <div id="hudSpecialRow" class="flex justify-between text-red-400 font-bold"><span id="hudSpecialName">Stock Nitro Boost:</span><span id="hudSpecialKey" class="font-mono">[Shift] / Space</span></div>
+                <div class="flex justify-between"><span>Instant Reset:</span><span class="font-mono text-red-400 font-bold">R</span></div>
+                
+                <div class="font-bold text-white pt-2 border-t border-gray-700/50 mt-1 flex items-center gap-1.5">
+                    <i class="fa-solid fa-users text-blue-400"></i> Competitors (Live Pace):
+                </div>
+                <div class="max-h-24 overflow-y-auto no-scrollbar space-y-0.5 mt-1 pr-1 text-[10px]">
+                    <div class="flex justify-between text-green-400"><span>Rival 1</span><span id="rival1Target" class="font-mono">Pace: Normal</span></div>
+                    <div class="flex justify-between text-orange-400"><span>Rival 2</span><span id="rival2Target" class="font-mono">Pace: Normal</span></div>
+                    <div class="flex justify-between text-blue-400"><span>Rival 3</span><span id="rival3Target" class="font-mono">Pace: Normal</span></div>
+                    <div class="flex justify-between text-purple-400"><span>Rival 4</span><span id="rival4Target" class="font-mono">Pace: Normal</span></div>
+                    <div class="flex justify-between text-pink-400"><span>Rival 5</span><span id="rival5Target" class="font-mono">Pace: Normal</span></div>
+                    <div class="flex justify-between text-yellow-400"><span>Rival 6</span><span id="rival6Target" class="font-mono">Pace: Normal</span></div>
+                    <div class="flex justify-between text-teal-400"><span>Rival 7</span><span id="rival7Target" class="font-mono">Pace: Normal</span></div>
+                </div>
+            </div>
+
+            <div class="flex flex-col items-center gap-3">
+                <button id="btnNitro" class="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 active:scale-95 text-white font-black px-6 py-2 rounded-full shadow-lg border border-white text-xs pointer-events-auto transition-all transform duration-150 hidden">
+                    <i class="fa-solid fa-fire-flame-curved mr-1"></i> USE NITRO [Shift]
+                </button>
+                <div id="speedContainer" class="bg-white/90 backdrop-blur-md rounded-full w-32 h-32 md:w-36 md:h-36 border-4 border-gray-300 flex flex-col items-center justify-center text-gray-900 pointer-events-auto relative shadow-2xl transition-all duration-300">
+                    <!-- ★ スピードメーター外周の円形スキルゲージを追加 -->
+                    <svg id="skillGaugeSvg" class="absolute inset-0 w-full h-full -rotate-90 transform pointer-events-none hidden" viewBox="0 0 128 128">
+                        <circle cx="64" cy="64" r="58" stroke="rgba(0,0,0,0.1)" stroke-width="6" fill="none" />
+                        <circle id="skillGaugeRing" cx="64" cy="64" r="58" stroke="#3b82f6" stroke-width="6" fill="none" stroke-dasharray="365" stroke-dashoffset="365" class="transition-all duration-75 ease-linear" stroke-linecap="round" />
+                    </svg>
+                    
+                    <div id="speed" class="text-4xl md:text-5xl font-black font-mono tracking-tighter z-10 transition-colors duration-300 text-red-600">0</div>
+                    <div class="text-[10px] text-gray-500 font-bold uppercase tracking-wider z-10">km/h</div>
+                    <div id="driftLight" class="absolute bottom-3 text-[10px] font-black tracking-widest text-gray-400 transition-all duration-200 z-10">
+                        NORMAL
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-2 pointer-events-auto">
+                <button id="btnChangeCar" onclick="showCarSelectModal()" class="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold px-6 py-2 rounded-lg flex items-center justify-center gap-2 shadow-lg transition-all border border-white text-xs">
+                    <i class="fa-solid fa-car-side"></i> MENU
+                </button>
+                <button id="btnRestart" onclick="if(gameState === 'PLAYING') resetGame(false);" class="bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold px-6 py-3 rounded-lg flex items-center justify-center gap-2 shadow-lg transition-all border-2 border-white">
+                    <i class="fa-solid fa-rotate-right"></i> RESTART (R)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ミニマップUI -->
+    <div class="absolute top-28 right-6 bg-black/50 backdrop-blur-sm rounded-lg p-1.5 border border-gray-600/30 pointer-events-auto shadow-sm flex flex-col items-center z-10 opacity-70 hover:opacity-100 transition-opacity">
+        <canvas id="minimap" width="60" height="60" class="rounded bg-black/20"></canvas>
+    </div>
+
+    <div id="game-container"></div>
+
+    <script>
+        // ================= グローバル変数・設定群 =================
+        const container = document.getElementById('game-container');
+        let scene, camera, renderer, clock;
+        let trackGroup = new THREE.Group(); 
+        
+        let gameState = 'GARAGE'; 
+
+        let previewCameraAngle = 0;
+        let previewCameraHeight = 1.8;
+        let isDraggingPreview = false;
+        let previousMousePosition = { x: 0, y: 0 };
+
+        let audioCtx, engineOsc1, engineOsc2, engineOsc3, engineGain, engineFilter;
+        let skidGain, skidSource, noiseBuffer, isMuted = false, bgmMasterGain, bgmInterval = null;
+        
+        const noteToFreq = (note) => {
+            if(!note) return 0;
+            const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+            const octave = parseInt(note.slice(-1));
+            const key = notes.indexOf(note.slice(0, -1));
+            return 440 * Math.pow(2, (key - 9) / 12 + (octave - 4));
+        };
+
+        const bassNotes = [
+            'C2','C3','C2','C3','C2','C3','C2','C3','C2','C3','C2','C3','C2','C3','C2','C3',
+            'A#1','A#2','A#1','A#2','A#1','A#2','A#1','A#2','A#1','A#2','A#1','A#2','A#1','A#2','A#1','A#2',
+            'G#1','G#2','G#1','G#2','G#1','G#2','G#1','G#2','G#1','G#2','G#1','G#2','G#1','G#2','G#1','G#2',
+            'G1','G2','G1','G2','G1','G2','G1','G2','G1','G2','G1','G2','G1','G2','G1','G2'
+        ];
+        
+        const melodyNotes = [
+            'C5', '', 'D#5', '', 'F5', '', 'G5', '', 'D#5', '', 'C5', '', 'A#4', '', 'C5', '',
+            '', '', '', '', 'G4', '', 'A#4', '', 'C5', '', 'D#5', '', 'F5', '', 'G5', '',
+            'G#5', '', 'G5', '', 'F5', '', 'D#5', '', 'C5', '', 'D#5', '', 'F5', '', 'G5', '',
+            'G5', '', 'F5', '', 'D#5', '', 'D5', '', 'C5', '', 'A#4', '', 'G4', '', 'F4', ''
+        ];
+
+        const MISSIONS_KEY = 'dk_prototype_missions_v1';
+        const CUSTOM_COLORS_KEY = 'dk_prototype_custom_colors_v1';
+        const STORAGE_KEY_BASE = 'dk_prototype_best_run_'; 
+
+        let missions = [
+            { id: 'mission_complete', text: 'レースを完走せよ', targetType: 'complete', done: false },
+            { id: 'mission_time', text: 'いずれかのコースで目標タイムを切る', targetType: 'time', targetValue: 100.0, done: false }, 
+            { id: 'mission_win', text: 'ライバル達に勝利し「1位」でゴールせよ', targetType: 'win', done: false }
+        ];
+
+        let customColors = {
+            speed: 0xffcc00,
+            balance: 0xcc0000,
+            handling: 0x00d2ff
+        };
+
+        let currentCourseId = 'suzuka';
+
+        const COURSES = {
+            suzuka: {
+                id: 'suzuka',
+                name: 'SUZUKA STYLE GRAND PRIX',
+                scale: 12.0,
+                bgColor: 0x87CEEB,
+                groundColor: 0x2d6a4f,
+                lapTarget: 105.0,
+                points: [
+                    new THREE.Vector3(0, 0, 40),       
+                    new THREE.Vector3(0, 0, 0),        
+                    new THREE.Vector3(0, 0, -40),      
+                    new THREE.Vector3(30, 0, -70),     
+                    new THREE.Vector3(50, 0, -50),     
+                    new THREE.Vector3(30, 0, -30),     
+                    new THREE.Vector3(60, 0, -10),     
+                    new THREE.Vector3(80, 0.5, 10),    
+                    new THREE.Vector3(60, 1.2, 40),    
+                    new THREE.Vector3(30, 0.8, 50),    
+                    new THREE.Vector3(10, 0, 80),      
+                    new THREE.Vector3(-30, 0, 100),    
+                    new THREE.Vector3(-60, 0, 80),     
+                    new THREE.Vector3(-30, 0, 50),     
+                    new THREE.Vector3(-80, 0, 60),     
+                    new THREE.Vector3(-100, 0.5, 30),  
+                    new THREE.Vector3(-80, 1.2, 0),    
+                    new THREE.Vector3(0, 1.8, 0),      
+                    new THREE.Vector3(40, 1.5, 0),     
+                    new THREE.Vector3(60, 1.0, 20),    
+                    new THREE.Vector3(40, 0.3, 40),    
+                    new THREE.Vector3(20, 0, 50),      
+                ]
+            },
+            tsukuba: {
+                id: 'tsukuba',
+                name: 'TSUKUBA STYLE CIRCUIT',
+                scale: 14.0,
+                bgColor: 0x4a90e2,
+                groundColor: 0x4a5d23,
+                lapTarget: 85.0,
+                points: [
+                    new THREE.Vector3(0, 0, 30),
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(0, 0, -20),
+                    new THREE.Vector3(15, 0, -50),
+                    new THREE.Vector3(40, 0, -30),
+                    new THREE.Vector3(25, 0, -10),
+                    new THREE.Vector3(40, 0, 20),
+                    new THREE.Vector3(25, 0, 40),
+                    new THREE.Vector3(50, 0, 70),
+                    new THREE.Vector3(70, 0, 40),      
+                    new THREE.Vector3(90, 0, 15),      
+                    new THREE.Vector3(100, 0, 40),     
+                    new THREE.Vector3(80, 0, 80),
+                    new THREE.Vector3(50, 0, 95),
+                    new THREE.Vector3(-20, 0, 95),
+                    new THREE.Vector3(-60, 0, 70),
+                    new THREE.Vector3(-30, 0, 30),
+                ]
+            },
+            oval: {
+                id: 'oval',
+                name: 'FUJI SPEEDWAY STYLE',
+                scale: 13.5,
+                bgColor: 0xfda4af, 
+                groundColor: 0x3d352e, 
+                lapTarget: 110.0,
+                points: [
+                    new THREE.Vector3(-150, 0, 90),
+                    new THREE.Vector3(-100, 0, 90),
+                    new THREE.Vector3(-50, 0, 90),
+                    new THREE.Vector3(0, 0, 90),
+                    new THREE.Vector3(50, 0, 90),
+                    new THREE.Vector3(100, 0, 90),
+                    new THREE.Vector3(140, 0, 90), 
+                    new THREE.Vector3(175, 0, 70),
+                    new THREE.Vector3(165, 0, 30),
+                    new THREE.Vector3(135, 0, 10),
+                    new THREE.Vector3(95, 0, 0),
+                    new THREE.Vector3(65, 0.5, -10),
+                    new THREE.Vector3(45, 1.0, -30),
+                    new THREE.Vector3(55, 1.2, -60),
+                    new THREE.Vector3(85, 1.5, -80),
+                    new THREE.Vector3(115, 1.8, -90),
+                    new THREE.Vector3(135, 1.5, -110),
+                    new THREE.Vector3(115, 1.0, -140),
+                    new THREE.Vector3(75, 0.5, -145),
+                    new THREE.Vector3(45, 0.2, -130),
+                    new THREE.Vector3(15, 0, -100),
+                    new THREE.Vector3(-15, 0, -80),
+                    new THREE.Vector3(-45, 0.5, -70),
+                    new THREE.Vector3(-65, 0.8, -85),
+                    new THREE.Vector3(-80, 1.2, -75),
+                    new THREE.Vector3(-90, 1.5, -55),
+                    new THREE.Vector3(-75, 1.8, -35),
+                    new THREE.Vector3(-90, 2.0, -15),
+                    new THREE.Vector3(-110, 2.2, 5),
+                    new THREE.Vector3(-130, 1.8, -8),  
+                    new THREE.Vector3(-145, 1.5, 15),  
+                    new THREE.Vector3(-155, 1.0, 45),  
+                    new THREE.Vector3(-165, 0.5, 75),  
+                ]
+            }
+        };
+
+        let curve, curveLength = 0, roadLookupPoints = [], closestU = 0.01, closestPt = null, allBestData = {};
+
+        const GRAVITY = 35.0; 
+        let ACCELERATION = 20.0; 
+        let MAX_SPEED = 87.5; 
+        const DECELERATION = 6.0; 
+        const BRAKE_DECEL = 40.0;
+        let STEER_SPEED = 3.5;
+        let GRIP_FACTOR = 0.98;
+        let BASE_TURN_SPEED = 1.25; 
+        
+        let BOOST_DURATION_MULT = 1.0;
+        let CHARGE_RATE = 1.0;
+        let BOOST_KICK = 10.0;
+        let DRIFT_THRESHOLD = 0.4; 
+
+        const roadWidth = 45.0; 
+        const grassWidth = roadWidth + 30.0; 
+
+        const carSettings = {
+            speed: {
+                maxSpeed: 100.0,      
+                acceleration: 26.0,
+                steerSpeed: 2.0,
+                baseTurnSpeed: 0.8,
+                grip: 0.95,
+                color: 0xffcc00,
+                emissive: 0xdd4400,
+                skill: 'aero_boost',  
+                boostDuration: 2.5,   
+                chargeRate: 0.4,      
+                boostKick: 12.0,
+                driftThreshold: 0.7,
+                rewards: [
+                    { name: 'パールホワイト', color: 0xffffff },
+                    { name: 'ミッドナイトブルー', color: 0x191970 },
+                    { name: 'ダークカーボン', color: 0x222222 }
+                ]
+            },
+            balance: {
+                maxSpeed: 92.5,       
+                acceleration: 28.0,   
+                steerSpeed: 3.5,
+                baseTurnSpeed: 1.25,
+                grip: 0.98, 
+                color: 0xcc0000,
+                emissive: 0x000000,
+                skill: 'nitro',
+                boostDuration: 3.0,   
+                chargeRate: 1.2,      
+                boostKick: 20.0,      
+                driftThreshold: 0.4,
+                rewards: [
+                    { name: 'サファイアブルー', color: 0x0f52ba },  
+                    { name: 'アメジストパープル', color: 0x9400d3 },
+                    { name: 'チャンピオンゴールド', color: 0xffd700 }
+                ]
+            },
+            handling: {
+                maxSpeed: 87.5,       
+                acceleration: 40.0,   
+                steerSpeed: 6.0,
+                baseTurnSpeed: 2.2,
+                grip: 0.998,
+                color: 0x00d2ff,
+                emissive: 0x0055ff,
+                skill: 'drift_turbo',  
+                boostDuration: 1.0,   
+                chargeRate: 0.8,      
+                boostKick: 22.0,      
+                driftThreshold: 0.45,
+                rewards: [
+                    { name: 'ライムグリーン', color: 0x32cd32 },
+                    { name: 'ホットピンク', color: 0xff1493 },
+                    { name: 'ピュアホワイト', color: 0xf0f8ff }
+                ]
+            }
+        };
+
+        const previewSpecs = {
+            'speed': {
+                name: 'SPEED DEVIL (TYPE-S)', desc: '最高速400km/hを誇る直線番長。重量級のため早めのブレーキングが必要だが、直線でアクセルを踏み続けることで発動する「エアロブースト」による爆発的な加速は他の追随を許さない。圧倒的なトップスピードでサーキットを制圧する。',
+                colorClass: 'text-yellow-500', barSpeed: '100%', barAccel: '50%', barHandling: '30%',
+                specialKey: 'W長押し (Auto)', hudName: 'Aero Boost:', hudKey: '[W] Hold'
+            },
+            'balance': {
+                name: 'DK CLASSIC (TYPE-B)', desc: '安定した加速と素直なハンドリングを併せ持つスタンダードモデル。クセのないグリップ走行で着実にコーナーをクリアし、任意のタイミングで発動できる「ストックニトロ」でストレートを一気に駆け抜ける。初心者から上級者まで扱いやすいバランス型。',
+                colorClass: 'text-red-500', barSpeed: '80%', barAccel: '70%', barHandling: '60%',
+                specialKey: 'Shift/Space', hudName: 'Stock Nitro:', hudKey: '[Shift] / [Space]'
+            },
+            'handling': {
+                name: 'CYBER GRIPPER (TYPE-M)', desc: '超軽量ボディと高回転型エンジンを組み合わせたコーナーリング特化マシン。高いグリップ力で鋭くインを突き、高速でコーナーを駆け抜ける。高度なハンドリング技術で「一撃ターボ」を発動させれば、コーナー出口で一気にライバルを突き放せる。',
+                colorClass: 'text-cyan-500', barSpeed: '60%', barAccel: '100%', barHandling: '100%',
+                specialKey: 'ドリフト後 (Auto)', hudName: 'Drift Turbo:', hudKey: 'Auto (After Drift)'
+            }
+        };
+
+        let selectedCarType = 'balance';
+        let bestSectorTimes = [null, null, null];
+        let sectorUITimeout = null;
+
+        const car = {
+            mesh: null, position: new THREE.Vector3(), velocity: new THREE.Vector3(0, 0, 0), angle: 0, pitch: 0, steering: 0, speed: 0,
+            isGrounded: true, isDrifting: false, activeTrailL: null, activeTrailR: null, width: 2.2, length: 4.5, offsetX: 0.0,
+            distanceTravelled: 0.0, currentU: 0.0, driftCharge: 0, boostTimer: 0, isBoosting: false, straightTimer: 0, nitroCharge: 0, nitroActiveTimer: 0,
+            earlyStart: false, startDashUsed: false, startDashTimer: 0, isAeroBoosting: false, sectorTimes: [null, null, null], passedSectors: [false, false, false]
+        };
+
+        let exhaustFlameL, exhaustFlameR; 
+
+        const rivals = [
+            { id: 1, color: 0x22c55e, mesh: null, speed: 0, paceFactor: 0.99, targetLapTime: 0, currentU: 0.0, angle: 0, pitch: 0, position: new THREE.Vector3(), isDrifting: false, baseOffsetX: -15.0, offsetX: -15.0, noiseSeed: 1.0, brakingPoint: 0.09, driftAggressiveness: 0.12, currentDriftSlide: 0, condition: 1.0, conditionText: 'Normal', slipstreamTimer: 0, slipstreamCooldown: 0 },
+            { id: 2, color: 0xf97316, mesh: null, speed: 0, paceFactor: 1.015, targetLapTime: 0, currentU: 0.0, angle: 0, pitch: 0, position: new THREE.Vector3(), isDrifting: false, baseOffsetX: 15.0,  offsetX: 15.0,  noiseSeed: 2.5, brakingPoint: 0.08, driftAggressiveness: 0.10, currentDriftSlide: 0, condition: 1.0, conditionText: 'Normal', slipstreamTimer: 0, slipstreamCooldown: 0 },
+            { id: 3, color: 0x3b82f6, mesh: null, speed: 0, paceFactor: 1.0, targetLapTime: 0, currentU: 0.0, angle: 0, pitch: 0, position: new THREE.Vector3(), isDrifting: false, baseOffsetX: -10.0, offsetX: -10.0, noiseSeed: 3.7, brakingPoint: 0.095, driftAggressiveness: 0.13, currentDriftSlide: 0, condition: 1.0, conditionText: 'Normal', slipstreamTimer: 0, slipstreamCooldown: 0 },
+            { id: 4, color: 0xa855f7, mesh: null, speed: 0, paceFactor: 1.01, targetLapTime: 0, currentU: 0.0, angle: 0, pitch: 0, position: new THREE.Vector3(), isDrifting: false, baseOffsetX: 10.0,  offsetX: 10.0,  noiseSeed: 4.2, brakingPoint: 0.085, driftAggressiveness: 0.11, currentDriftSlide: 0, condition: 1.0, conditionText: 'Normal', slipstreamTimer: 0, slipstreamCooldown: 0 },
+            { id: 5, color: 0xec4899, mesh: null, speed: 0, paceFactor: 0.98, targetLapTime: 0, currentU: 0.0, angle: 0, pitch: 0, position: new THREE.Vector3(), isDrifting: false, baseOffsetX: -5.0,  offsetX: -5.0,  noiseSeed: 5.9, brakingPoint: 0.10, driftAggressiveness: 0.14, currentDriftSlide: 0, condition: 1.0, conditionText: 'Normal', slipstreamTimer: 0, slipstreamCooldown: 0 },
+            { id: 6, color: 0xeab308, mesh: null, speed: 0, paceFactor: 1.02, targetLapTime: 0, currentU: 0.0, angle: 0, pitch: 0, position: new THREE.Vector3(), isDrifting: false, baseOffsetX: 5.0,   offsetX: 5.0,   noiseSeed: 6.1, brakingPoint: 0.075, driftAggressiveness: 0.09, currentDriftSlide: 0, condition: 1.0, conditionText: 'Normal', slipstreamTimer: 0, slipstreamCooldown: 0 },
+            { id: 7, color: 0x14b8a6, mesh: null, speed: 0, paceFactor: 1.005, targetLapTime: 0, currentU: 0.0, angle: 0, pitch: 0, position: new THREE.Vector3(), isDrifting: false, baseOffsetX: -1.0,  offsetX: -1.0,  noiseSeed: 7.4, brakingPoint: 0.09, driftAggressiveness: 0.12, currentDriftSlide: 0, condition: 1.0, conditionText: 'Normal', slipstreamTimer: 0, slipstreamCooldown: 0 }
+        ];
+
+        let currentRunHistory = []; 
+        let bestRunHistory = null;  
+        let ghostCar = null;        
+        let ghostIndex = 0;
+
+        const keys = { w: false, a: false, s: false, d: false, r: false, shift: false, space: false };
+
+        let gameTime = 0, bestTime = null, isRunning = false, startCountdown = 0, lastCountStep = 4, finished = false, checkpointPassed = false, finalPlace = 1; 
+
+        let trails = [];
+        const MAX_TRAIL_POINTS = 100;
+        let speedLinesGroup;
+        const speedLines = [];
+
+        let minimapCanvas, minimapCtx;
+        let minimapScale = 1;
+        let minimapOffset = { x: 0, y: 0 };
+
+        // ================= UI & コントロール関数群 =================
+        window.showCarSelectModal = function() {
+            gameState = 'GARAGE';
+            startCountdown = 0;
+            isRunning = false;
+            stopBGM();
+            
+            const courseModal = document.getElementById('courseSelectModal');
+            if (courseModal) {
+                courseModal.style.opacity = '0';
+                courseModal.style.pointerEvents = 'none';
+                courseModal.classList.remove('flex');
+                courseModal.classList.add('hidden');
+            }
+
+            const modal = document.getElementById('carSelectModal');
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.style.display = 'flex';
+                modal.className = "absolute inset-0 bg-black/90 backdrop-blur-md z-30 flex flex-col items-center justify-center p-3 transition-all duration-500";
+                setTimeout(() => {
+                    modal.style.opacity = '1';
+                    modal.style.pointerEvents = 'auto';
+                }, 10);
+            }
+            
+            const carList = document.getElementById('carSelectionList');
+            if (carList) carList.classList.remove('hidden');
+            const modalTitle = document.getElementById('modalTitle');
+            if (modalTitle) modalTitle.classList.remove('hidden');
+            
+            const previewPanel = document.getElementById('carPreviewPanel');
+            if (previewPanel) previewPanel.classList.add('hidden');
+
+            if (car && car.mesh) {
+                car.position.set(0, 1000, 0);
+                car.velocity.set(0, 0, 0);
+                car.speed = 0;
+                car.angle = 0;
+                car.pitch = 0;
+                car.isGrounded = true;
+                car.mesh.position.copy(car.position);
+                car.mesh.rotation.set(0, 0, 0);
+            }
+            previewCameraAngle = -Math.PI / 1.5;
+            previewCameraHeight = 1.8;
+        };
+
+        window.showCourseSelectModal = function() {
+            initAudio(); 
+            const carModal = document.getElementById('carSelectModal');
+            carModal.style.opacity = '0';
+            carModal.style.pointerEvents = 'none';
+            
+            ['suzuka', 'tsukuba', 'oval'].forEach(courseId => {
+                const saved = localStorage.getItem(STORAGE_KEY_BASE + courseId);
+                const el = document.getElementById('bestTime_' + courseId);
+                if (el) {
+                    if (saved) {
+                        try {
+                            const data = JSON.parse(saved);
+                            if (data.bestTime) {
+                                el.innerText = formatTime(data.bestTime);
+                            } else {
+                                el.innerText = '--:--.--';
+                            }
+                        } catch(e) {
+                            el.innerText = '--:--.--';
+                        }
+                    } else {
+                        el.innerText = '--:--.--';
+                    }
+                }
+            });
+
+            const courseModal = document.getElementById('courseSelectModal');
+            courseModal.classList.remove('hidden');
+            courseModal.classList.add('flex');
+            setTimeout(() => {
+                courseModal.style.opacity = '1';
+                courseModal.style.pointerEvents = 'auto';
+            }, 50);
+        };
+
+        window.showPreview = function(type) {
+            initAudio(); 
+            selectedCarType = type;
+            const settings = carSettings[type];
+            
+            MAX_SPEED = settings.maxSpeed;
+            ACCELERATION = settings.acceleration;
+            STEER_SPEED = settings.steerSpeed;
+            BASE_TURN_SPEED = settings.baseTurnSpeed;
+            GRIP_FACTOR = settings.grip;
+            
+            BOOST_DURATION_MULT = settings.boostDuration;
+            CHARGE_RATE = settings.chargeRate;
+            BOOST_KICK = settings.boostKick;
+            DRIFT_THRESHOLD = settings.driftThreshold;
+
+            updateCarMaterials(type); 
+
+            const btnNitro = document.getElementById('btnNitro');
+            if (selectedCarType === 'balance') {
+                btnNitro.classList.remove('hidden');
+            } else {
+                btnNitro.classList.add('hidden');
+            }
+
+            const spec = previewSpecs[type];
+            document.getElementById('previewName').innerText = spec.name;
+            document.getElementById('previewName').className = `text-2xl md:text-3xl font-black italic racing-text ${spec.colorClass}`;
+            document.getElementById('previewDesc').innerText = spec.desc;
+            
+            const specialKeyEl = document.getElementById('previewSpecialKey');
+            if (specialKeyEl) {
+                specialKeyEl.innerText = spec.specialKey;
+                specialKeyEl.className = `font-bold ${spec.colorClass}`;
+            }
+
+            const hudSpecialRow = document.getElementById('hudSpecialRow');
+            if (hudSpecialRow) {
+                hudSpecialRow.className = `flex justify-between font-bold ${spec.colorClass}`;
+            }
+
+            const hudSpecialName = document.getElementById('hudSpecialName');
+            if (hudSpecialName) {
+                hudSpecialName.innerText = spec.hudName;
+            }
+
+            const hudSpecialKey = document.getElementById('hudSpecialKey');
+            if (hudSpecialKey) {
+                hudSpecialKey.innerText = spec.hudKey;
+            }
+            
+            document.getElementById('barSpeed').style.width = '0%';
+            document.getElementById('barAccel').style.width = '0%';
+            document.getElementById('barHandling').style.width = '0%';
+
+            renderCustomizeAndMissions(type);
+
+            document.getElementById('carSelectionList').classList.add('hidden');
+            document.getElementById('modalTitle').classList.add('hidden');
+            
+            document.getElementById('carPreviewPanel').classList.remove('hidden');
+            
+            const modal = document.getElementById('carSelectModal');
+            modal.className = "absolute inset-0 bg-gradient-to-r from-black/95 via-black/40 to-transparent z-30 flex flex-col justify-center p-6 transition-all duration-500";
+
+            setTimeout(() => {
+                document.getElementById('barSpeed').style.width = spec.barSpeed;
+                document.getElementById('barAccel').style.width = spec.barAccel;
+                document.getElementById('barHandling').style.width = spec.barHandling;
+            }, 50);
+
+            gameState = 'PREVIEW';
+            resetGame(true); 
+        };
+
+        window.selectCourse = function(courseId) {
+            currentCourseId = courseId;
+            const courseModal = document.getElementById('courseSelectModal');
+            courseModal.style.opacity = '0';
+            courseModal.style.pointerEvents = 'none';
+            
+            setTimeout(() => {
+                courseModal.classList.remove('flex');
+                courseModal.classList.add('hidden');
+                
+                buildTrack(currentCourseId);
+                
+                const hudName = document.getElementById('hudCourseName');
+                if (hudName) {
+                    hudName.innerHTML = `${COURSES[currentCourseId].name} | Press <kbd class="px-1.5 py-0.5 bg-white text-black rounded font-bold">R</kbd> to Restart`;
+                }
+                
+                resetGame(false); 
+            }, 500);
+        };
+
+        function renderCustomizeAndMissions(type) {
+            const colorContainer = document.getElementById('colorPickerContainer');
+            const missionContainer = document.getElementById('missionListContainer');
+            colorContainer.innerHTML = '';
+            missionContainer.innerHTML = '';
+            const settings = carSettings[type];
+            const activeColor = customColors[type];
+
+            createColorButton(colorContainer, '標準カラー', settings.color, true, activeColor, type);
+
+            missions.forEach((m, index) => {
+                const reward = settings.rewards[index];
+                createColorButton(colorContainer, reward.name, reward.color, m.done, activeColor, type);
+            });
+
+            missions.forEach((m, index) => {
+                const reward = settings.rewards[index];
+                const missionRow = document.createElement('div');
+                missionRow.className = `p-2 rounded border flex items-center justify-between ${m.done ? 'bg-green-950/40 border-green-800' : 'bg-neutral-900 border-neutral-800'}`;
+                let icon = m.done ? '<i class="fa-solid fa-circle-check text-green-500 mr-1"></i>' : '<i class="fa-solid fa-circle-notch text-neutral-600 mr-1 animate-spin"></i>';
+                let statusText = m.done ? '<span class="text-green-400 font-extrabold uppercase">COMPLETE</span>' : '<span class="text-neutral-500 font-bold">LOCKED</span>';
+                missionRow.innerHTML = `
+                    <div class="flex-1 pr-2">
+                        <div class="font-bold text-white flex items-center">${icon} ${m.text}</div>
+                        <div class="text-[9px] text-gray-500 mt-0.5">報酬：専用カラー【${reward.name}】が解除</div>
+                    </div>
+                    <div class="text-right shrink-0">${statusText}</div>
+                `;
+                missionContainer.appendChild(missionRow);
+            });
+        }
+
+        function createColorButton(parent, name, hex, isUnlocked, activeColor, type) {
+            const btn = document.createElement('button');
+            const hexStr = '#' + hex.toString(16).padStart(6, '0');
+            const isActive = activeColor === hex;
+            btn.className = `w-7 h-7 rounded-full border-2 transition-all relative flex items-center justify-center cursor-pointer ${isActive ? 'border-white scale-110 shadow-lg' : 'border-neutral-800 hover:scale-105'}`;
+            btn.style.backgroundColor = hexStr;
+            btn.title = name + (isUnlocked ? '' : ' (ロック中)');
+
+            if (!isUnlocked) {
+                btn.innerHTML = '<i class="fa-solid fa-lock text-[10px] text-white/80 drop-shadow-md"></i>';
+                btn.className += ' opacity-50 cursor-not-allowed';
+            } else {
+                if (isActive) {
+                    btn.innerHTML = '<i class="fa-solid fa-check text-[10px] text-black drop-shadow-md bg-white rounded-full p-0.5"></i>';
+                }
+                btn.onclick = () => {
+                    customColors[type] = hex;
+                    saveMissionsAndColors();
+                    updateCarMaterials(type);
+                    renderCustomizeAndMissions(type);
+                };
+            }
+            parent.appendChild(btn);
+        }
+
+        function updateCarMaterials(type) {
+            if (!car.mesh) return;
+            const chosenColor = customColors[type];
+            const settings = carSettings[type];
+            car.mesh.traverse(child => {
+                if (child.isMesh && child.geometry && child.geometry.type === "BoxGeometry") {
+                    if (child.scale.x === 1 || child.position.y === 0.5) {
+                        child.material.color.setHex(chosenColor);
+                        child.material.roughness = 0.2;
+                        child.material.metalness = 0.6;
+                        if (settings.emissive) {
+                            child.material.emissive.setHex(settings.emissive);
+                            child.material.emissiveIntensity = 0.3;
+                        } else {
+                            child.material.emissive.setHex(0x000000);
+                        }
+                    }
+                }
+            });
+        }
+
+        // ================= セーブ / ロード処理 =================
+        function saveMissionsAndColors() {
+            try {
+                localStorage.setItem(MISSIONS_KEY, JSON.stringify(missions));
+                localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(customColors));
+            } catch (e) { console.warn("ミッションデータの保存に失敗しました:", e); }
+        }
+
+        function loadMissionsAndColors() {
+            try {
+                const savedMissions = localStorage.getItem(MISSIONS_KEY);
+                const savedColors = localStorage.getItem(CUSTOM_COLORS_KEY);
+                if (savedMissions) missions = JSON.parse(savedMissions);
+                if (savedColors) customColors = JSON.parse(savedColors);
+            } catch (e) { console.warn("ミッションデータの読み込みに失敗しました:", e); }
+        }
+
+        function getStorageKey() { return STORAGE_KEY_BASE + currentCourseId; }
+
+        function saveBestRun() {
+            try {
+                allBestData[currentCourseId] = { bestTime: bestTime, history: bestRunHistory, bestSectorTimes: bestSectorTimes };
+                localStorage.setItem(getStorageKey(), JSON.stringify(allBestData[currentCourseId]));
+            } catch (e) { console.warn("学習データの保存に失敗しました:", e); }
+        }
+
+        function rollRivalConditions() {
+            const courseTarget = COURSES[currentCourseId].lapTarget;
+            rivals.forEach(rival => {
+                const rand = Math.random();
+                if (rand < 0.3) { rival.condition = 0.85; rival.conditionText = "Superb 🔥"; }
+                else if (rand < 0.6) { rival.condition = 0.93; rival.conditionText = "Good 📈"; }
+                else if (rand < 0.85) { rival.condition = 1.0; rival.conditionText = "Normal"; }
+                else { rival.condition = 1.01; rival.conditionText = "Struggling 💤"; }
+
+                if (bestTime) {
+                    let baseTarget = bestTime;
+                    let diff = 0;
+                    switch(rival.id) {
+                        case 5: diff = -2.5; break; case 1: diff = -0.5; break; case 3: diff = 0.5; break;  
+                        case 7: diff = 1.5; break; case 4: diff = 2.5; break; case 2: diff = 3.5; break; case 6: diff = 5.0; break;  
+                    }
+                    let ratio = courseTarget / 105.0; 
+                    rival.targetLapTime = Math.max(10.0, (baseTarget + (diff * ratio)) * rival.condition);
+                } else {
+                    rival.targetLapTime = courseTarget * rival.paceFactor * rival.condition;
+                }
+                const targetEl = document.getElementById(`rival${rival.id}Target`);
+                if (targetEl) {
+                    const condColor = rival.condition < 0.90 ? 'text-rose-500 font-black px-1 py-0.5 rounded animate-bounce' : (rival.condition < 0.95 ? 'text-amber-400 font-bold' : (rival.condition === 1.0 ? 'text-gray-300' : 'text-blue-400'));
+                    targetEl.innerHTML = `<span class="${condColor}">${rival.conditionText}</span>`;
+                }
+            });
+        }
+
+        function loadBestRun() {
+            try {
+                const saved = localStorage.getItem(getStorageKey());
+                bestTime = null; bestRunHistory = null; bestSectorTimes = [null, null, null];
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    allBestData[currentCourseId] = data;
+                    if (data.bestTime && data.history && data.history.length > 0) {
+                        bestTime = data.bestTime;
+                        bestRunHistory = data.history.map(rec => ({
+                            pos: new THREE.Vector3(rec.pos.x, rec.pos.y, rec.pos.z), rot: rec.rot, pitch: rec.pitch,
+                            speed: rec.speed, isDrifting: rec.isDrifting, currentU: rec.currentU, time: rec.time
+                        }));
+                        if (data.bestSectorTimes) bestSectorTimes = data.bestSectorTimes;
+                    }
+                }
+                const bestTimeEl = document.getElementById('bestTime');
+                if (bestTimeEl) bestTimeEl.innerText = bestTime ? formatTime(bestTime) : '--:--.--';
+                rollRivalConditions(); 
+            } catch (e) { console.warn("学習データの読み込みに失敗しました:", e); }
+        }
+
+        // ================= オーディオ処理 =================
+        function initAudio() {
+            if (audioCtx) { if(audioCtx.state === 'suspended') audioCtx.resume(); return; }
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+                const bufferSize = audioCtx.sampleRate * 2;
+                noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) { output[i] = Math.random() * 2 - 1; }
+
+                bgmMasterGain = audioCtx.createGain(); bgmMasterGain.gain.value = 0.6; bgmMasterGain.connect(audioCtx.destination);
+                engineOsc1 = audioCtx.createOscillator(); engineOsc1.type = 'sawtooth';
+                engineOsc2 = audioCtx.createOscillator(); engineOsc2.type = 'triangle'; 
+                engineOsc3 = audioCtx.createOscillator(); engineOsc3.type = 'sawtooth'; 
+                engineGain = audioCtx.createGain(); engineGain.gain.value = 0;
+                engineFilter = audioCtx.createBiquadFilter(); engineFilter.type = 'lowpass'; engineFilter.frequency.value = 180; engineFilter.Q.value = 4.0; 
+                engineOsc1.connect(engineFilter); engineOsc2.connect(engineFilter); engineOsc3.connect(engineFilter);
+                engineFilter.connect(engineGain); engineGain.connect(audioCtx.destination);
+                engineOsc1.start(); engineOsc2.start(); engineOsc3.start();
+
+                skidGain = audioCtx.createGain(); skidGain.gain.value = 0;
+                const skidFilter = audioCtx.createBiquadFilter(); skidFilter.type = 'bandpass'; skidFilter.frequency.value = 3000; 
+                skidSource = audioCtx.createBufferSource(); skidSource.buffer = noiseBuffer; skidSource.loop = true;
+                skidSource.connect(skidFilter); skidFilter.connect(skidGain); skidGain.connect(audioCtx.destination);
+                skidSource.start();
+            } catch(e) { console.warn('Web Audio API not supported', e); }
+        }
+
+        function playDrum(step, time) {
+            if (step % 4 === 0) {
+                const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+                osc.type = 'sine'; osc.frequency.setValueAtTime(120, time); osc.frequency.exponentialRampToValueAtTime(20, time + 0.1);
+                osc.connect(gain); gain.connect(bgmMasterGain);
+                gain.gain.setValueAtTime(0.2, time); gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+                osc.start(time); osc.stop(time + 0.1);
+            }
+            if (step % 2 !== 0 && noiseBuffer) {
+                const src = audioCtx.createBufferSource(); src.buffer = noiseBuffer;
+                const filter = audioCtx.createBiquadFilter(); filter.type = 'highpass'; filter.frequency.value = 5000;
+                const gain = audioCtx.createGain(); gain.gain.setValueAtTime(0.04, time); gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
+                src.connect(filter); filter.connect(gain); gain.connect(bgmMasterGain);
+                src.start(time); src.stop(time + 0.05);
+            }
+        }
+
+        function playStep(step, time) {
+            if (!audioCtx || isMuted) return;
+            const stepTime = 60 / 160 / 4;
+            playDrum(step, time);
+            const bFreq = noteToFreq(bassNotes[step % bassNotes.length]);
+            if (bFreq) {
+                const osc = audioCtx.createOscillator(); osc.type = 'sawtooth'; const gain = audioCtx.createGain();
+                osc.frequency.value = bFreq; const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 800;
+                osc.connect(filter); filter.connect(gain); gain.connect(bgmMasterGain);
+                gain.gain.setValueAtTime(0.1, time); gain.gain.exponentialRampToValueAtTime(0.01, time + stepTime * 0.8);
+                osc.start(time); osc.stop(time + stepTime);
+            }
+            const mFreq = noteToFreq(melodyNotes[step % melodyNotes.length]);
+            if (mFreq) {
+                const osc = audioCtx.createOscillator(); osc.type = 'square'; const gain = audioCtx.createGain();
+                osc.frequency.value = mFreq; const filterNode = audioCtx.createBiquadFilter(); filterNode.type = 'lowpass';
+                filterNode.frequency.setValueAtTime(2500, time); filterNode.frequency.exponentialRampToValueAtTime(800, time + stepTime * 1.5);
+                osc.connect(filterNode); filterNode.connect(gain); gain.connect(bgmMasterGain);
+                gain.gain.setValueAtTime(0.06, time); gain.gain.exponentialRampToValueAtTime(0.001, time + stepTime * 1.2);
+                osc.start(time); osc.stop(time + stepTime * 1.5);
+            }
+        }
+
+        function startBGM() {
+            if (!audioCtx || isMuted) return; stopBGM();
+            const stepTime = 60 / 160 / 4; let step = 0; let nextNoteTime = audioCtx.currentTime + 0.1;
+            function schedule() {
+                if (!isRunning && startCountdown <= 0 && gameState !== 'PLAYING') return; 
+                if (finished) return; 
+                while (nextNoteTime < audioCtx.currentTime + 0.15) { playStep(step, nextNoteTime); nextNoteTime += stepTime; step++; }
+                bgmInterval = setTimeout(schedule, 25);
+            }
+            schedule();
+        }
+        function stopBGM() { if (bgmInterval) { clearTimeout(bgmInterval); bgmInterval = null; } }
+
+        function updateAudio() {
+            if (!audioCtx || !engineOsc1) return;
+            if (isMuted) {
+                if (engineGain) engineGain.gain.value = 0; if (skidGain) skidGain.gain.value = 0; if (bgmMasterGain) bgmMasterGain.gain.value = 0;
+                return;
+            } else { if (bgmMasterGain) bgmMasterGain.gain.value = 0.6; }
+            
+            if (gameState === 'PLAYING' && !finished) {
+                const speedRatio = Math.min(1.0, Math.abs(car.speed) / MAX_SPEED);
+                const baseFreq = 22; let pitch1 = baseFreq + speedRatio * 45; let pitch2 = pitch1 * 1.5; let pitch3 = pitch1 * 2.0; 
+                pitch2 += Math.sin(audioCtx.currentTime * 24) * 1.5;
+                if (car.nitroActiveTimer > 0 || car.isBoosting || car.straightTimer > 1.0) { pitch1 *= 1.35; pitch2 *= 1.35; pitch3 *= 1.35; }
+                
+                engineOsc1.frequency.setTargetAtTime(pitch1, audioCtx.currentTime, 0.1); engineOsc2.frequency.setTargetAtTime(pitch2, audioCtx.currentTime, 0.1); engineOsc3.frequency.setTargetAtTime(pitch3, audioCtx.currentTime, 0.1);
+                engineFilter.frequency.setTargetAtTime(120 + speedRatio * 320, audioCtx.currentTime, 0.15);
+                engineGain.gain.setTargetAtTime(keys.w ? 0.15 : 0.05, audioCtx.currentTime, 0.15);
+                if (car.isDrifting && car.isGrounded && Math.abs(car.speed) > 20) skidGain.gain.setTargetAtTime(0.03, audioCtx.currentTime, 0.1); else skidGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+            } else {
+                engineGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1); if (skidGain) skidGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+            }
+        }
+
+        function playSkillSound(type) {
+            if (!audioCtx || isMuted || !noiseBuffer) return;
+            const noiseSrc = audioCtx.createBufferSource(); noiseSrc.buffer = noiseBuffer; noiseSrc.loop = true;
+            const noiseFilter = audioCtx.createBiquadFilter(); noiseFilter.type = 'bandpass'; const noiseGainNode = audioCtx.createGain();
+            noiseSrc.connect(noiseFilter); noiseFilter.connect(noiseGainNode); noiseGainNode.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+            if (type === 'nitro') {
+                noiseFilter.frequency.setValueAtTime(300, now); noiseFilter.frequency.exponentialRampToValueAtTime(2000, now + 0.5);
+                noiseGainNode.gain.setValueAtTime(0.25, now); noiseGainNode.gain.exponentialRampToValueAtTime(0.01, now + 3.0);
+                noiseSrc.start(now); noiseSrc.stop(now + 3.0);
+                const osc = audioCtx.createOscillator(); osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); osc.frequency.exponentialRampToValueAtTime(2000, now + 1.0);
+                const oscGain = audioCtx.createGain(); oscGain.gain.setValueAtTime(0.15, now); oscGain.gain.exponentialRampToValueAtTime(0.01, now + 1.5);
+                osc.connect(oscGain); oscGain.connect(audioCtx.destination); osc.start(now); osc.stop(now + 1.5);
+            } else if (type === 'aero') {
+                noiseFilter.frequency.setValueAtTime(500, now); noiseGainNode.gain.setValueAtTime(0.2, now); noiseGainNode.gain.exponentialRampToValueAtTime(0.01, now + 2.0);
+                noiseSrc.start(now); noiseSrc.stop(now + 2.0);
+            } else if (type === 'turbo') {
+                noiseFilter.frequency.setValueAtTime(2500, now); noiseGainNode.gain.setValueAtTime(0.25, now); noiseGainNode.gain.exponentialRampToValueAtTime(0.01, now + 1.5);
+                noiseSrc.start(now); noiseSrc.stop(now + 1.5);
+                const osc = audioCtx.createOscillator(); osc.type = 'square'; osc.frequency.setValueAtTime(1200, now); osc.frequency.exponentialRampToValueAtTime(3000, now + 0.5);
+                const oscGain = audioCtx.createGain(); oscGain.gain.setValueAtTime(0.1, now); oscGain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
+                osc.connect(oscGain); oscGain.connect(audioCtx.destination); osc.start(now); osc.stop(now + 1.0);
+            }
+        }
+        function playCountdownSound(type) {
+            if (!audioCtx || isMuted) return; const now = audioCtx.currentTime; const osc = audioCtx.createOscillator(); const gainNode = audioCtx.createGain();
+            osc.connect(gainNode); gainNode.connect(audioCtx.destination);
+            if (type === 'beep') { osc.type = 'square'; osc.frequency.setValueAtTime(440, now); gainNode.gain.setValueAtTime(0.1, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15); osc.start(now); osc.stop(now + 0.15); } 
+            else if (type === 'go') { osc.type = 'square'; osc.frequency.setValueAtTime(880, now); gainNode.gain.setValueAtTime(0.2, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.6); osc.start(now); osc.stop(now + 0.6); }
+        }
+
+        // ================= 3D初期化・オブジェクト生成 =================
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 8000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+
+            container.appendChild(renderer.domElement);
+            scene.add(trackGroup);
+
+            clock = new THREE.Clock();
+            loadMissionsAndColors();
+
+            setupLights();
+            createGarageEnvironment(); 
+            createCar();
+            createGhostCar();
+            createRivals(); 
+            initSpeedLines(); 
+
+            buildTrack('suzuka');
+
+            window.addEventListener('keydown', handleKeyDown);
+            window.addEventListener('keyup', handleKeyUp);
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('mousedown', onMouseDown);
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+            window.addEventListener('touchstart', onTouchStart, { passive: false });
+            window.addEventListener('touchmove', onTouchMove, { passive: false });
+            window.addEventListener('touchend', onTouchEnd);
+            
+            window.addEventListener('pointerdown', handlePointerDown);
+            window.addEventListener('pointermove', handlePointerMove);
+            window.addEventListener('pointerup', handlePointerUp);
+            
+            window.addEventListener('blur', () => {
+                keys.w = false; keys.a = false; keys.s = false; keys.d = false; keys.shift = false; keys.space = false;
+                handlePointerUp();
+            });
+
+            document.getElementById('btnToggleAudio').addEventListener('click', () => {
+                isMuted = !isMuted;
+                const icon = document.getElementById('audioIcon');
+                if (isMuted) {
+                    icon.className = 'fa-solid fa-volume-xmark text-red-400';
+                    if (engineGain) engineGain.gain.value = 0; if (skidGain) skidGain.gain.value = 0; if (bgmMasterGain) bgmMasterGain.gain.value = 0;
+                } else {
+                    icon.className = 'fa-solid fa-volume-high text-white';
+                    initAudio(); if (bgmMasterGain) bgmMasterGain.gain.value = 0.6;
+                }
+            });
+
+            document.body.addEventListener('click', () => { if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, { once: true });
+
+            showCarSelectModal();
+            animate();
+        }
+
+        function setupLights() {
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.60); scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xfffaee, 0.6); 
+            dirLight.position.set(300, 500, 200); dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 4096; dirLight.shadow.mapSize.height = 4096;
+            dirLight.shadow.camera.near = 0.5; dirLight.shadow.camera.far = 2000;
+            dirLight.shadow.camera.left = -800; dirLight.shadow.camera.right = 800; dirLight.shadow.camera.top = 800; dirLight.shadow.camera.bottom = -800;
+            scene.add(dirLight);
+        }
+
+        function createGarageEnvironment() {
+            const floor = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 0.5, 64), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6, metalness: 0.5 })); floor.position.set(0, 999.5, 0); floor.receiveShadow = true; scene.add(floor);
+            const spotLight = new THREE.SpotLight(0xffffff, 4.0, 50); spotLight.position.set(0, 1015, 10); spotLight.angle = Math.PI / 4; spotLight.penumbra = 0.5; spotLight.castShadow = true; spotLight.target.position.set(0, 1000, 0); scene.add(spotLight); scene.add(spotLight.target);
+            const backLight1 = new THREE.PointLight(0xffffff, 1.5, 40); backLight1.position.set(-8, 1002, -8); scene.add(backLight1);
+            const backLight2 = new THREE.PointLight(0xffffff, 1.5, 40); backLight2.position.set(8, 1002, -8); scene.add(backLight2);
+        }
+
+        function createCar() {
+            const carGroup = new THREE.Group();
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0xcc0000, roughness: 0.2, metalness: 0.5 });
+            const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.6, 4.5), bodyMat); body.position.y = 0.5; body.castShadow = true; body.receiveShadow = true; carGroup.add(body);
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 2), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.9 })); cabin.position.set(0, 0.9, -0.3); cabin.castShadow = true; carGroup.add(cabin);
+            const wingMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 });
+            const wingBaseL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), wingMat); wingBaseL.position.set(-0.8, 0.8, 1.8); wingBaseL.castShadow = true; const wingBaseR = wingBaseL.clone(); wingBaseR.position.x = 0.8; carGroup.add(wingBaseL); carGroup.add(wingBaseR);
+            const wing = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 0.6), wingMat); wing.position.set(0, 1.1, 1.8); wing.castShadow = true; carGroup.add(wing);
+            const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 16); wheelGeo.rotateZ(Math.PI / 2); const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
+            car.wheels = []; [[-1.1, 0.4, -1.5], [1.1, 0.4, -1.5], [-1.1, 0.4, 1.5], [1.1, 0.4, 1.5]].forEach(pos => { const wheel = new THREE.Mesh(wheelGeo, wheelMat); wheel.position.set(pos[0], pos[1], pos[2]); wheel.castShadow = true; carGroup.add(wheel); car.wheels.push(wheel); });
+            const flameGeo = new THREE.ConeGeometry(0.15, 0.8, 8); flameGeo.rotateX(Math.PI / 2); const flameMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
+            exhaustFlameL = new THREE.Mesh(flameGeo, flameMat); exhaustFlameL.position.set(-0.6, 0.4, 2.2); carGroup.add(exhaustFlameL);
+            exhaustFlameR = new THREE.Mesh(flameGeo, flameMat); exhaustFlameR.position.set(0.6, 0.4, 2.2); carGroup.add(exhaustFlameR);
+            carGroup.scale.set(1.2, 1.2, 1.2); scene.add(carGroup); car.mesh = carGroup;
+
+            // ==========================================
+            // ★ 3Dエフェクト初期化コード ★
+            // ==========================================
+            
+            // ■ TYPE-S: オーバードライブ・ヒート（火の粉パーティクル）
+            const sparkCount = 40;
+            car.sparkPos = new Float32Array(sparkCount * 3);
+            const sparkGeo = new THREE.BufferGeometry();
+            sparkGeo.setAttribute('position', new THREE.BufferAttribute(car.sparkPos, 3));
+            const sparkMat = new THREE.PointsMaterial({ color: 0xff5500, size: 0.4, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
+            car.sparks = new THREE.Points(sparkGeo, sparkMat);
+            car.sparkData = [];
+            for(let i = 0; i < sparkCount; i++) {
+                car.sparkData.push({ active: false, life: 0, offset: new THREE.Vector3() });
+                car.sparkPos[i*3] = 0; car.sparkPos[i*3+1] = -10; car.sparkPos[i*3+2] = 0;
+            }
+            carGroup.add(car.sparks);
+
+            // ■ TYPE-S: ウィンド・ストリーム（車体に沿う柔らかい風の軌跡）
+            car.windStreams = new THREE.Group();
+            
+            // 車体の形状に沿うような曲線を定義
+            const curvePoints = [
+                new THREE.Vector3(0.0, 0.0, 2.5),   // フロントバンパー
+                new THREE.Vector3(1.3, 0.2, 0.5),   // サイドドア（膨らみ）
+                new THREE.Vector3(1.2, 0.1, -2.0),  // リアフェンダー
+                new THREE.Vector3(0.5, 0.3, -6.0)   // 後方へ巻き込むように収束
+            ];
+            
+            const curveR = new THREE.CatmullRomCurve3(curvePoints);
+            const tubeGeoR = new THREE.TubeGeometry(curveR, 20, 0.06, 6, false);
+            
+            // 左側用にX座標を反転させた曲線を定義
+            const curvePointsL = curvePoints.map(p => new THREE.Vector3(-p.x, p.y, p.z));
+            const curveL = new THREE.CatmullRomCurve3(curvePointsL);
+            const tubeGeoL = new THREE.TubeGeometry(curveL, 20, 0.06, 6, false);
+
+            // 黄色のマテリアル
+            const streamMat = new THREE.MeshBasicMaterial({ color: 0xffe600, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+
+            // 左右に複数本配置して束にする
+            for(let i = 0; i < 8; i++) {
+                const isRight = i % 2 === 0;
+                const stream = new THREE.Mesh(isRight ? tubeGeoR : tubeGeoL, streamMat);
+                
+                const yOffset = (Math.random() - 0.5) * 0.6;
+                const zOffset = (Math.random() - 0.5) * 1.0;
+                stream.position.set(0, yOffset, zOffset);
+                
+                stream.userData = { 
+                    baseY: yOffset, 
+                    baseZ: zOffset,
+                    speed: 15 + Math.random() * 15,
+                    phase: Math.random() * Math.PI * 2 
+                };
+                car.windStreams.add(stream);
+            }
+            carGroup.add(car.windStreams);
+
+            // ■ TYPE-B: ライト・トレイル（テールランプの軌跡）
+            const MAX_TRAIL = 30; 
+            car.lightTrailPosL = new Float32Array(MAX_TRAIL * 3);
+            car.lightTrailPosR = new Float32Array(MAX_TRAIL * 3);
+            car.lightTrailGeoL = new THREE.BufferGeometry();
+            car.lightTrailGeoR = new THREE.BufferGeometry();
+            car.lightTrailGeoL.setAttribute('position', new THREE.BufferAttribute(car.lightTrailPosL, 3));
+            car.lightTrailGeoR.setAttribute('position', new THREE.BufferAttribute(car.lightTrailPosR, 3));
+            const lightTrailMat = new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, linewidth: 3 });
+            car.lightTrailLineL = new THREE.Line(car.lightTrailGeoL, lightTrailMat);
+            car.lightTrailLineR = new THREE.Line(car.lightTrailGeoR, lightTrailMat);
+            scene.add(car.lightTrailLineL); 
+            scene.add(car.lightTrailLineR);
+
+            // ■ TYPE-M: サイバー・ライトニング（雷エフェクト）
+            car.lightnings = [];
+            for (let i = 0; i < 5; i++) {
+                const geo = new THREE.BufferGeometry();
+                const pos = new Float32Array(8 * 3);
+                geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+                const mat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
+                const line = new THREE.Line(geo, mat);
+                carGroup.add(line);
+                car.lightnings.push({ mesh: line, positions: pos });
+            }
+        }
+
+        function createRivals() {
+            rivals.forEach(rival => {
+                const rivalGroup = new THREE.Group();
+                const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.6, 4.5), new THREE.MeshStandardMaterial({ color: rival.color, roughness: 0.2, metalness: 0.5 })); body.position.y = 0.5; body.castShadow = true; body.receiveShadow = true; rivalGroup.add(body);
+                const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 2), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.9 })); cabin.position.set(0, 0.9, -0.3); cabin.castShadow = true; rivalGroup.add(cabin);
+                const wingMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5 });
+                const wingBaseL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), wingMat); wingBaseL.position.set(-0.8, 0.8, 1.8); wingBaseL.castShadow = true; const wingBaseR = wingBaseL.clone(); wingBaseR.position.x = 0.8; rivalGroup.add(wingBaseL); rivalGroup.add(wingBaseR);
+                const wing = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 0.6), wingMat); wing.position.set(0, 1.1, 1.8); wing.castShadow = true; rivalGroup.add(wing);
+                const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 16); wheelGeo.rotateZ(Math.PI / 2); const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
+                [[-1.1, 0.4, -1.5], [1.1, 0.4, -1.5], [-1.1, 0.4, 1.5], [1.1, 0.4, 1.5]].forEach(pos => { const wheel = new THREE.Mesh(wheelGeo, wheelMat); wheel.position.set(pos[0], pos[1], pos[2]); wheel.castShadow = true; rivalGroup.add(wheel); });
+                const flameGeo = new THREE.ConeGeometry(0.15, 0.8, 8); flameGeo.rotateX(Math.PI / 2); const flameMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
+                rival.flameL = new THREE.Mesh(flameGeo, flameMat); rival.flameL.position.set(-0.6, 0.4, 2.2); rivalGroup.add(rival.flameL);
+                rival.flameR = new THREE.Mesh(flameGeo, flameMat); rival.flameR.position.set(0.6, 0.4, 2.2); rivalGroup.add(rival.flameR);
+                rivalGroup.scale.set(1.2, 1.2, 1.2); scene.add(rivalGroup); rival.mesh = rivalGroup;
+            });
+        }
+
+        function createGhostCar() {
+            const ghostGroup = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.6, 4.5), new THREE.MeshBasicMaterial({ color: 0x88ccff, transparent: true, opacity: 0.4 })); body.position.y = 0.5; ghostGroup.add(body);
+            ghostGroup.scale.set(1.2, 1.2, 1.2); scene.add(ghostGroup); ghostCar = ghostGroup; ghostCar.visible = false;
+        }
+
+        function initSpeedLines() {
+            speedLinesGroup = new THREE.Group(); scene.add(speedLinesGroup);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.0 });
+            for(let i=0; i<150; i++) {
+                const length = Math.random() * 12 + 6; const z = - (Math.random() * 60 + 20); const radius = Math.random() * 25 + 18; const theta = Math.random() * Math.PI * 2;
+                const x = Math.cos(theta) * radius; const y = Math.abs(Math.sin(theta) * radius) + 2; 
+                const lineGeo = new THREE.BufferGeometry(); lineGeo.setFromPoints([new THREE.Vector3(x, y, z), new THREE.Vector3(x, y, z + length)]);
+                const line = new THREE.Line(lineGeo, lineMat); line.userData = { x: x, y: y, z: z, length: length };
+                speedLinesGroup.add(line); speedLines.push(line);
+            }
+        }
+
+        function buildTrack(courseId) {
+            currentCourseId = courseId;
+            const course = COURSES[courseId];
+            while(trackGroup.children.length > 0){ const child = trackGroup.children[0]; trackGroup.remove(child); if(child.geometry) child.geometry.dispose(); }
+
+            scene.background = new THREE.Color(course.bgColor); scene.fog = new THREE.Fog(course.bgColor, 150, 1200);
+            const fujiGroup = new THREE.Group(); fujiGroup.name = "fujiMountain";
+            if (courseId === 'oval') {
+                const mtGeo = new THREE.ConeGeometry(550, 220, 4); mtGeo.rotateY(Math.PI / 4); const mt = new THREE.Mesh(mtGeo, new THREE.MeshLambertMaterial({ color: 0x1a2133, fog: false })); mt.position.y = 110; fujiGroup.add(mt);
+                const snowGeo = new THREE.ConeGeometry(175, 70, 4); snowGeo.rotateY(Math.PI / 4); const snow = new THREE.Mesh(snowGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false })); snow.position.y = 185; fujiGroup.add(snow);
+                fujiGroup.position.set(-1500, -200, -2000); fujiGroup.scale.set(5.0, 5.0, 5.0); trackGroup.add(fujiGroup);
+            }
+
+            const scale = course.scale; const points = course.points.map(p => p.clone().multiplyScalar(scale));
+            curve = new THREE.CatmullRomCurve3(points, true); 
+            curveLength = curve.getLength();
+
+            const segments = 500; const roadGeom = new THREE.BufferGeometry(); const rVerts = []; const rIdx = [];
+            const grassGeom = new THREE.BufferGeometry(); const gVerts = []; const gIdx = [];
+            const bridgeGeom = new THREE.BufferGeometry(); const bVerts = []; const bIdx = []; const bridgeThickness = 2.0; 
+
+            for (let i = 0; i <= segments; i++) {
+                const u = i / segments; const pt = curve.getPointAt(u % 1.0); 
+                let tangent = curve.getTangentAt(u % 1.0).normalize();
+                
+                let normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
+                if (normal.lengthSq() < 0.0001) normal.set(1, 0, 0); 
+                normal.normalize();
+                
+                const pRL = pt.clone().addScaledVector(normal, -roadWidth / 2); const pRR = pt.clone().addScaledVector(normal, roadWidth / 2); rVerts.push(pRL.x, pRL.y, pRL.z, pRR.x, pRR.y, pRR.z);
+
+                const pGL_out = pt.clone().addScaledVector(normal, -grassWidth / 2); const pGL_in  = pt.clone(); pGL_out.y -= 0.03; pGL_in.y -= 0.03; 
+                const pGR_in  = pt.clone(); const pGR_out = pt.clone().addScaledVector(normal, grassWidth / 2); pGR_in.y -= 0.03; pGR_out.y -= 0.03;
+
+                gVerts.push(pGL_out.x, pGL_out.y, pGL_out.z, pGL_in.x, pGL_in.y, pGL_in.z); gVerts.push(pGR_in.x, pGR_in.y, pGR_in.z, pGR_out.x, pGR_out.y, pGR_out.z);
+
+                const bL_Top = pGL_out.clone(); bL_Top.y -= 0.01; const bR_Top = pGR_out.clone(); bR_Top.y -= 0.01;
+                const bL_Bot = pGL_out.clone(); bL_Bot.y -= bridgeThickness; const bR_Bot = pGR_out.clone(); bR_Bot.y -= bridgeThickness;
+                bVerts.push(bL_Top.x, bL_Top.y, bL_Top.z); bVerts.push(bR_Top.x, bR_Top.y, bR_Top.z); bVerts.push(bL_Bot.x, bL_Bot.y, bL_Bot.z); bVerts.push(bL_Bot.x, bL_Bot.y, bL_Bot.z); 
+
+                if (i < segments) {
+                    const a = i * 2; const b = i * 2 + 1; const c = (i + 1) * 2; const d = (i + 1) * 2 + 1; rIdx.push(a, b, d); rIdx.push(a, d, c);
+                    const baseL = i * 4; const nextL = (i + 1) * 4; gIdx.push(baseL, baseL+1, nextL+1); gIdx.push(baseL, nextL+1, nextL);
+                    const baseR = i * 4 + 2; const nextR = (i + 1) * 4 + 2; gIdx.push(baseR, baseR+1, nextR+1); gIdx.push(baseR, nextR+1, nextR);
+                    const baseB = i * 4; const nextB = (i + 1) * 4; bIdx.push(baseB, baseB+3, nextB+3); bIdx.push(baseB, nextB+3, nextB); bIdx.push(baseB+1, nextB+1, nextB+2); bIdx.push(baseB+1, nextB+2, baseB+2); bIdx.push(baseB+3, baseB+2, nextB+2); bIdx.push(baseB+3, nextB+2, nextB+3);
+                }
+            }
+            roadGeom.setAttribute('position', new THREE.Float32BufferAttribute(rVerts, 3)); roadGeom.setIndex(rIdx); roadGeom.computeVertexNormals(); trackGroup.add(new THREE.Mesh(roadGeom, new THREE.MeshLambertMaterial({ color: 0x1c1c1c, side: THREE.DoubleSide })));
+            grassGeom.setAttribute('position', new THREE.Float32BufferAttribute(gVerts, 3)); grassGeom.setIndex(gIdx); grassGeom.computeVertexNormals(); trackGroup.add(new THREE.Mesh(grassGeom, new THREE.MeshLambertMaterial({ color: course.groundColor, side: THREE.DoubleSide })));
+            bridgeGeom.setAttribute('position', new THREE.Float32BufferAttribute(bVerts, 3)); bridgeGeom.setIndex(bIdx); bridgeGeom.computeVertexNormals(); trackGroup.add(new THREE.Mesh(bridgeGeom, new THREE.MeshLambertMaterial({ color: 0x444444, side: THREE.DoubleSide })));
+
+            const curbWidth = 1.8; const curbSteps = 1600; const curbGeom = new THREE.BufferGeometry(); const cVerts = []; const cIdx = [];
+            
+            for (let i = 0; i <= curbSteps; i++) {
+                const u = i / curbSteps; const pt = curve.getPointAt(u % 1.0); 
+                let tangent = curve.getTangentAt(u % 1.0).normalize();
+                
+                let normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
+                if (normal.lengthSq() < 0.0001) normal.set(1, 0, 0); 
+                normal.normalize();
+                
+                const pL_in = pt.clone().addScaledVector(normal, -roadWidth / 2); const pL_out = pt.clone().addScaledVector(normal, -roadWidth / 2 - curbWidth);
+                const pR_in = pt.clone().addScaledVector(normal, roadWidth / 2); const pR_out = pt.clone().addScaledVector(normal, roadWidth / 2 + curbWidth);
+                const h_out = 0.06; const h_in = 0.02; pL_in.y += h_in; pL_out.y += h_out; pR_in.y += h_in; pR_out.y += h_out;
+                cVerts.push(pL_in.x, pL_in.y, pL_in.z, pL_out.x, pL_out.y, pL_out.z, pR_in.x, pR_in.y + h_out, pR_in.z, pR_out.x, pR_out.y + h_out, pR_out.z); 
+                if (i < curbSteps) { const b = i * 4; const n = (i + 1) * 4; cIdx.push(b, b+1, n+1); cIdx.push(b, n+1, n); cIdx.push(b+2, n+3, b+3); cIdx.push(b+2, n+2, n+3); }
+            }
+            curbGeom.setAttribute('position', new THREE.Float32BufferAttribute(cVerts, 3)); curbGeom.setIndex(cIdx); curbGeom.computeVertexNormals();
+            for (let i = 0; i < curbSteps; i++) curbGeom.addGroup(i * 12, 12, (i % 2 === 0) ? 0 : 1);
+            trackGroup.add(new THREE.Mesh(curbGeom, [new THREE.MeshLambertMaterial({ color: 0xcc1111, side: THREE.DoubleSide }), new THREE.MeshLambertMaterial({ color: 0xcccccc, side: THREE.DoubleSide })]));
+
+            const ground = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.MeshLambertMaterial({ color: course.groundColor }));
+            ground.rotation.x = -Math.PI / 2; ground.position.y = -20.0; ground.receiveShadow = true; trackGroup.add(ground);
+
+            roadLookupPoints = []; const lookupCount = 4000;
+            for (let i = 0; i < lookupCount; i++) roadLookupPoints.push(curve.getPointAt(i / lookupCount));
+
+            const centerVerts = []; const centerIdx = []; let cOffset = 0; const dashSegments = 1000;
+            for (let i = 0; i < dashSegments; i++) {
+                if (i % 4 < 2) { 
+                    const u1 = i / dashSegments; const u2 = (i + 0.8) / dashSegments;
+                    const pt1 = curve.getPointAt(u1); const pt2 = curve.getPointAt(u2);
+                    
+                    let norm1 = new THREE.Vector3(-curve.getTangentAt(u1).z, 0, curve.getTangentAt(u1).x);
+                    if (norm1.lengthSq() < 0.0001) norm1.set(1, 0, 0); norm1.normalize();
+                    let norm2 = new THREE.Vector3(-curve.getTangentAt(u2).z, 0, curve.getTangentAt(u2).x);
+                    if (norm2.lengthSq() < 0.0001) norm2.set(1, 0, 0); norm2.normalize();
+                    
+                    const w = 0.35; const h = 0.04; 
+                    const p1 = pt1.clone().addScaledVector(norm1, -w); p1.y += h; const p2 = pt1.clone().addScaledVector(norm1, w);  p1.y += h;
+                    const p3 = pt2.clone().addScaledVector(norm2, -w); p3.y += h; const p4 = pt2.clone().addScaledVector(norm2, w);  p4.y += h;
+                    centerVerts.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, p3.x, p3.y, p3.z, p4.x, p4.y, p4.z);
+                    centerIdx.push(cOffset, cOffset+1, cOffset+3, cOffset, cOffset+3, cOffset+2); cOffset += 4;
+                }
+            }
+            const centerGeom = new THREE.BufferGeometry(); centerGeom.setAttribute('position', new THREE.Float32BufferAttribute(centerVerts, 3)); centerGeom.setIndex(centerIdx); centerGeom.computeVertexNormals();
+            trackGroup.add(new THREE.Mesh(centerGeom, new THREE.MeshLambertMaterial({ color: 0xff9900, side: THREE.DoubleSide })));
+
+            createStartAndFinishGate(); initMinimap(); 
+        }
+
+        function createStartAndFinishGate() {
+            const gateGroup = new THREE.Group();
+            const metalMat = new THREE.MeshStandardMaterial({ color: 0xdd2222, metalness: 0.5, roughness: 0.4 }); 
+            const leftPillar = new THREE.Mesh(new THREE.BoxGeometry(1.8, 14, 1.8), metalMat); leftPillar.position.set(-roadWidth/2 - 1.5, 7, 0); leftPillar.castShadow = true; gateGroup.add(leftPillar);
+            const rightPillar = leftPillar.clone(); rightPillar.position.x = roadWidth/2 + 1.5; gateGroup.add(rightPillar);
+            const topBeam = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 5, 3, 1.8), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.5 })); topBeam.position.set(0, 14, 0); topBeam.castShadow = true; gateGroup.add(topBeam);
+            const startPt = curve.getPointAt(0); const startTangent = curve.getTangentAt(0).normalize();
+            gateGroup.position.copy(startPt); gateGroup.lookAt(startPt.clone().add(startTangent)); trackGroup.add(gateGroup);
+        }
+
+        // ================= ドリフト時・走行中のタイヤ痕（トレイルエフェクト）処理 =================
+        function createTrailGeometry() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(MAX_TRAIL_POINTS * 3);
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const material = new THREE.LineBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.5, linewidth: 3 });
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            return { line: line, points: [], active: true };
+        }
+
+        function updateTrails() {
+            if ((car.isDrifting || (keys.s && car.speed > 10)) && car.isGrounded) {
+                const leftOffset = new THREE.Vector3(-1.08, -0.08, 1.8).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.angle).add(car.mesh.position);
+                const rightOffset = new THREE.Vector3(1.08, -0.08, 1.8).applyAxisAngle(new THREE.Vector3(0, 1, 0), car.angle).add(car.mesh.position);
+
+                if (!car.activeTrailL) {
+                    car.activeTrailL = createTrailGeometry();
+                    car.activeTrailR = createTrailGeometry();
+                    trails.push(car.activeTrailL);
+                    trails.push(car.activeTrailR);
+                }
+
+                addPointToTrail(car.activeTrailL, leftOffset);
+                addPointToTrail(car.activeTrailR, rightOffset);
+            } else {
+                if (car.activeTrailL) car.activeTrailL.active = false;
+                if (car.activeTrailR) car.activeTrailR.active = false;
+                car.activeTrailL = null;
+                car.activeTrailR = null;
+            }
+
+            for (let i = trails.length - 1; i >= 0; i--) {
+                const trail = trails[i];
+                trail.line.material.opacity -= 0.003;
+                if (trail.line.material.opacity <= 0) {
+                    scene.remove(trail.line);
+                    trail.line.geometry.dispose();
+                    trail.line.material.dispose();
+                    trails.splice(i, 1);
+                }
+            }
+        }
+
+        function updateRivalTrails(rival) {
+            if (rival.isDrifting && rival.speed > 10) {
+                const leftOffset = new THREE.Vector3(-1.08, -0.08, 1.8).applyAxisAngle(new THREE.Vector3(0, 1, 0), rival.angle).add(rival.mesh.position);
+                const rightOffset = new THREE.Vector3(1.08, -0.08, 1.8).applyAxisAngle(new THREE.Vector3(0, 1, 0), rival.angle).add(rival.mesh.position);
+
+                if (!rival.trailL) {
+                    rival.trailL = createTrailGeometry();
+                    rival.trailR = createTrailGeometry();
+                    trails.push(rival.trailL);
+                    trails.push(rival.trailR);
+                }
+
+                addPointToTrail(rival.trailL, leftOffset);
+                addPointToTrail(rival.trailR, rightOffset);
+            } else {
+                if (rival.trailL) rival.trailL.active = false;
+                if (rival.trailR) rival.trailR.active = false;
+                rival.trailL = null;
+                rival.trailR = null;
+            }
+        }
+
+        function addPointToTrail(trail, pos) {
+            trail.points.push(pos.clone());
+            if (trail.points.length > MAX_TRAIL_POINTS) trail.points.shift();
+            const positions = trail.line.geometry.attributes.position.array;
+            for (let i = 0; i < MAX_TRAIL_POINTS; i++) {
+                const pt = trail.points[i] || pos;
+                positions[i * 3] = pt.x;
+                positions[i * 3 + 1] = pt.y;
+                positions[i * 3 + 2] = pt.z;
+            }
+            trail.line.geometry.attributes.position.needsUpdate = true;
+        }
+
+        function updateSpeedLines(delta) {
+            if(!speedLinesGroup || !car.mesh) return;
+            
+            speedLinesGroup.position.copy(camera.position);
+            speedLinesGroup.rotation.copy(camera.rotation);
+
+            const speedRatio = Math.max(0, Math.abs(car.speed) / MAX_SPEED);
+            const moveZ = 250 * speedRatio * delta; 
+
+            speedLines.forEach(line => {
+                line.userData.z += moveZ;
+                if (line.userData.z > 10) {
+                    line.userData.z = - (Math.random() * 60 + 30);
+                }
+                const pos = line.geometry.attributes.position.array;
+                pos[2] = line.userData.z;
+                pos[5] = line.userData.z + line.userData.length;
+                line.geometry.attributes.position.needsUpdate = true;
+                
+                let targetOpacity = (speedRatio > 0.6) ? (speedRatio - 0.6) * 1.5 : 0;
+                line.material.opacity = Math.min(0.5, targetOpacity);
+            });
+        }
+
+        // ================= 操作と物理演算 =================
+        function handleKeyDown(e) {
+            const k = e.key.toLowerCase(); const c = e.code;
+            if (k === 'w' || c === 'ArrowUp') keys.w = true;
+            if (k === 'a' || c === 'ArrowLeft') keys.a = true;
+            if (k === 's' || c === 'ArrowDown') keys.s = true;
+            if (k === 'd' || c === 'ArrowRight') keys.d = true;
+            if (e.key === 'Shift' || c === 'ShiftLeft' || c === 'ShiftRight' || e.key === ' ') { keys.shift = true; activateNitro(); e.preventDefault(); }
+            if (k === 'r') { if (gameState === 'PLAYING') resetGame(false); }
+        }
+        function handleKeyUp(e) {
+            const k = e.key.toLowerCase(); const c = e.code;
+            if (k === 'w' || c === 'ArrowUp') keys.w = false;
+            if (k === 'a' || c === 'ArrowLeft') keys.a = false;
+            if (k === 's' || c === 'ArrowDown') keys.s = false;
+            if (k === 'd' || c === 'ArrowRight') keys.d = false;
+            if (e.key === 'Shift' || c === 'ShiftLeft' || c === 'ShiftRight' || e.key === ' ') keys.shift = false;
+        }
+
+        function handlePointerDown(e) { 
+            if (gameState !== 'PLAYING') return; 
+            if (e.target.closest('#carSelectModal') || e.target.closest('#courseSelectModal') || e.target.closest('button')) return; 
+            keys.w = true; 
+            updateSteeringByPointer(e); 
+        }
+        function handlePointerMove(e) { 
+            if (gameState !== 'PLAYING') return; 
+            if (!keys.w) return; 
+            updateSteeringByPointer(e); 
+        }
+        function handlePointerUp() { 
+            if (gameState !== 'PLAYING') return; 
+            keys.w = false; keys.a = false; keys.d = false; 
+        }
+        function updateSteeringByPointer(e) {
+            const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX; const w = window.innerWidth;
+            if (clientX < w / 3) { keys.a = true; keys.d = false; } else if (clientX > w * 2 / 3) { keys.d = true; keys.a = false; } else { keys.a = false; keys.d = false; }
+        }
+
+        function onMouseDown(e) {
+            if (gameState !== 'PREVIEW') return;
+            if (e.clientX < window.innerWidth * 0.4) return; 
+            isDraggingPreview = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        }
+
+        function onMouseMove(e) {
+            if (gameState !== 'PREVIEW' || !isDraggingPreview) return;
+            const deltaX = e.clientX - previousMousePosition.x;
+            const deltaY = e.clientY - previousMousePosition.y;
+
+            previewCameraAngle -= deltaX * 0.007; 
+            previewCameraHeight += deltaY * 0.05;  
+            previewCameraHeight = Math.max(0.5, Math.min(8.0, previewCameraHeight));
+
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        }
+
+        function onMouseUp() {
+            isDraggingPreview = false;
+        }
+
+        function onTouchStart(e) {
+            if (gameState !== 'PREVIEW' || e.touches.length === 0) return;
+            const touch = e.touches[0];
+            if (touch.clientX < window.innerWidth * 0.4) return;
+            isDraggingPreview = true;
+            previousMousePosition = { x: touch.clientX, y: touch.clientY };
+        }
+
+        function onTouchMove(e) {
+            if (gameState !== 'PREVIEW' || !isDraggingPreview || e.touches.length === 0) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            const deltaX = touch.clientX - previousMousePosition.x;
+            const deltaY = touch.clientY - previousMousePosition.y;
+
+            previewCameraAngle -= deltaX * 0.009;
+            previewCameraHeight += deltaY * 0.07;
+            previewCameraHeight = Math.max(0.5, Math.min(8.0, previewCameraHeight));
+
+            previousMousePosition = { x: touch.clientX, y: touch.clientY };
+        }
+
+        function onTouchEnd() {
+            isDraggingPreview = false;
+        }
+
+        function activateNitro() {
+            if (selectedCarType === 'balance' && car.nitroCharge >= 99.9 && car.nitroActiveTimer <= 0 && isRunning && !finished) {
+                car.nitroActiveTimer = carSettings.balance.boostDuration; car.nitroCharge = 0; car.speed = Math.max(car.speed, car.speed + carSettings.balance.boostKick); 
+                flashScreen('rgba(239, 68, 68, 0.25)'); playSkillSound('nitro'); 
+            }
+        }
+
+        function resetGame(isPreview = false) {
+            car.speed = 0; car.steering = 0; car.offsetX = 0; car.distanceTravelled = 0.5; car.pitch = 0; car.currentU = 0;
+            car.driftCharge = 0; car.boostTimer = 0; car.isBoosting = false; car.straightTimer = 0; car.nitroCharge = 0; car.nitroActiveTimer = 0;
+            car.earlyStart = false; car.startDashUsed = false; car.startDashTimer = 0; car.isAeroBoosting = false;
+            car.sectorTimes = [null, null, null]; car.passedSectors = [false, false, false];
+            keys.w = false; keys.a = false; keys.s = false; keys.d = false; keys.shift = false; keys.space = false; stopBGM();
+            updateCarMaterials(selectedCarType);
+
+            if (isPreview) {
+                car.position.set(0, 1000, 0); car.angle = 0; car.pitch = 0; car.velocity.set(0, 0, 0); car.isGrounded = true;
+                if (car.mesh) { car.mesh.position.copy(car.position); car.mesh.rotation.set(0, 0, 0); }
+                gameState = 'PREVIEW'; previewCameraAngle = -Math.PI / 1.5; previewCameraHeight = 1.8; startCountdown = 0; lastCountStep = 4; isRunning = false;
+                document.getElementById('announcement').classList.add('opacity-0'); document.getElementById('announcement').classList.remove('opacity-100');
+            } else {
+                loadBestRun();
+                const startPt = curve.getPointAt(0.01); const startTangent = curve.getTangentAt(0.01).normalize();
+                car.angle = Math.atan2(-startTangent.x, -startTangent.z); car.position.copy(startPt); car.position.y += 0.1; car.velocity.set(0, 0, 0); car.isGrounded = true;
+                checkGroundCollision();
+                if(closestPt) { car.position.y = closestPt.y + 0.1; car.pitch = Math.asin(curve.getTangentAt(closestU).normalize().y); }
+                if (car.mesh) { car.mesh.position.copy(car.position); car.mesh.rotation.set(car.pitch, car.angle, 0, 'YXZ'); }
+                gameState = 'PLAYING'; startCountdown = 3.2; lastCountStep = 4; isRunning = false;
+                const ann = document.getElementById('announcement'); ann.innerText = "READY"; ann.className = "text-8xl font-black italic tracking-widest text-white racing-text transition-all duration-300 transform scale-100 opacity-100 font-mono";
+                const helpEl = document.getElementById('controlsHelp'); if (helpEl) { helpEl.style.opacity = '0'; helpEl.style.pointerEvents = 'none'; }
+            }
+
+            rivals.forEach(rival => {
+                rival.speed = 0; rival.currentU = 0.01 - (rival.id * 0.0015); if (rival.currentU < 0) rival.currentU += 1.0;
+                rival.isDrifting = false; rival.trailL = null; rival.trailR = null; rival.lastHistoryIndex = 0; rival.currentDriftSlide = 0; rival.slipstreamTimer = 0; rival.slipstreamCooldown = 0;
+                const rStartPt = curve.getPointAt(rival.currentU); const rStartTangent = curve.getTangentAt(rival.currentU).normalize(); const rNormal = new THREE.Vector3(-rStartTangent.z, 0, rStartTangent.x).normalize();
+                rival.angle = Math.atan2(-rStartTangent.x, -rStartTangent.z); rival.offsetX = rival.baseOffsetX; rival.position.copy(rStartPt).addScaledVector(rNormal, rival.offsetX); rival.position.y = rStartPt.y + 0.1;
+                if (rival.mesh) { rival.mesh.position.copy(rival.position); rival.mesh.rotation.set(0, rival.angle, 0); }
+            });
+
+            trails.forEach(t => { scene.remove(t.line); t.line.geometry.dispose(); t.line.material.dispose(); }); trails = []; car.activeTrailL = null; car.activeTrailR = null;
+            ghostIndex = 0; 
+            if (bestRunHistory) { 
+                ghostCar.visible = true; 
+                const rec0 = bestRunHistory[0]; 
+                ghostCar.position.copy(rec0.pos); 
+                ghostCar.rotation.set(0, rec0.rot, 0); 
+            } else { 
+                ghostCar.visible = false; 
+            }
+            checkpointPassed = false; finished = false; gameTime = 0; currentRunHistory = [];
+            document.getElementById('currentTime').innerText = "00:00.00"; document.getElementById('speed').innerText = "0"; document.getElementById('positionText').innerHTML = `1<span class="text-xs text-blue-400 font-extrabold">st</span> <span class="text-xs text-gray-400 font-normal">/ 8</span>`;
+        }
+
+        function updatePhysics(delta) {
+            if (gameState === 'GARAGE' || gameState === 'PREVIEW') return;
+            if (startCountdown > 0) {
+                if (keys.w && startCountdown > 0.4) car.earlyStart = true;
+                const prevCountdown = startCountdown; startCountdown -= delta; const currentStep = Math.ceil(startCountdown);
+                if (currentStep < lastCountStep && currentStep > 0 && currentStep <= 3) { playCountdownSound('beep'); lastCountStep = currentStep; }
+                const ann = document.getElementById('announcement');
+                if (startCountdown <= 0 && prevCountdown > 0) {
+                    playCountdownSound('go'); lastCountStep = 0; isRunning = true; startBGM();
+                    ann.innerText = "GO!"; ann.className = "text-9xl font-black italic tracking-widest text-red-500 racing-text transition-all duration-300 transform scale-125 opacity-100 font-mono";
+                    setTimeout(() => { if (isRunning) ann.className = "text-8xl opacity-0 scale-50 transition-all duration-500"; }, 1000);
+                } else if (startCountdown > 0) { ann.innerText = Math.ceil(startCountdown); if (ann.classList.contains('opacity-0')) { ann.classList.remove('opacity-0'); ann.classList.add('opacity-100'); } }
+                if (startCountdown > 0) return; 
+            } else if (!finished) { startCountdown -= delta; }
+            if (finished) return;
+
+            gameTime += delta; updateTimerUI();
+
+            if (car.isGrounded) {
+                let activeMaxSpeed = MAX_SPEED; let activeAccel = ACCELERATION; const driftIndicator = document.getElementById('driftLight');
+                const speedAbs = Math.abs(car.speed);
+
+                if (selectedCarType === 'handling' && isRunning && !car.startDashUsed) {
+                    if (keys.w) { car.startDashUsed = true; if (!car.earlyStart && startCountdown > -0.5) { car.startDashTimer = 1.5; flashScreen('rgba(0, 255, 255, 0.4)'); playSkillSound('turbo'); } } else if (startCountdown <= -0.5) { car.startDashUsed = true; }
+                }
+
+                if (selectedCarType === 'balance') {
+                    if (isRunning && !finished) {
+                        let chargeInc = delta * 15.0; 
+                        if (car.speed > 30) car.nitroCharge = Math.min(100.0, car.nitroCharge + chargeInc);
+                    }
+                    if (car.nitroActiveTimer > 0) {
+                        car.nitroActiveTimer -= delta; activeMaxSpeed = MAX_SPEED + 20.0; activeAccel = ACCELERATION * 2.8;   
+                        driftIndicator.innerText = "NITRO BURST!!!"; driftIndicator.className = "absolute bottom-3 text-[13px] font-black tracking-widest text-red-500 animate-ping"; 
+                        exhaustFlameL.material.color.setHex(0x0044ff); exhaustFlameR.material.color.setHex(0x0044ff); // ★ 通常の炎をディープブルー（青炎）に変更
+                    } else {
+                        exhaustFlameL.material.color.setHex(0x00ffff); exhaustFlameR.material.color.setHex(0x00ffff);
+                        if (car.nitroCharge >= 99.9) { driftIndicator.innerText = "NITRO READY [Shift/Space]"; driftIndicator.className = "absolute bottom-3 text-[11px] font-black tracking-widest text-orange-500 animate-pulse"; } 
+                        else { driftIndicator.innerText = "NITRO: " + Math.floor(car.nitroCharge) + "%"; driftIndicator.className = "absolute bottom-3 text-[10px] font-bold tracking-widest text-gray-400"; }
+                    }
+                    const btnNitro = document.getElementById('btnNitro');
+                    if (btnNitro) { if (car.nitroCharge >= 99.9) { btnNitro.className = "bg-gradient-to-r from-red-600 to-orange-500 hover:scale-105 active:scale-95 text-white font-black px-6 py-2 rounded-full shadow-lg border-2 border-yellow-400 text-xs pointer-events-auto transition-all transform duration-150 animate-bounce block"; } else { btnNitro.className = "bg-neutral-800 text-neutral-500 font-black px-6 py-2 rounded-full border border-neutral-700 text-xs pointer-events-none transition-all block opacity-60"; } }
+                } else if (selectedCarType === 'speed') {
+                    if (keys.w && !car.isDrifting && car.speed > 50) car.straightTimer += delta; else car.straightTimer = 0;
+                    if (car.straightTimer > 1.0) {
+                        if (!car.isAeroBoosting) { car.isAeroBoosting = true; playSkillSound('aero'); }
+                        activeMaxSpeed = MAX_SPEED + 40.0; activeAccel = ACCELERATION * 1.5; driftIndicator.innerText = "AERO BOOST!!"; driftIndicator.className = "absolute bottom-3 text-[13px] font-black tracking-widest text-yellow-500 animate-ping"; exhaustFlameL.material.color.setHex(0xffaa00); exhaustFlameR.material.color.setHex(0xffaa00);
+                    } else if (car.straightTimer > 0) {
+                        car.isAeroBoosting = false; driftIndicator.innerText = "AERO CHARGE.."; driftIndicator.className = "absolute bottom-3 text-[11px] font-black tracking-widest text-orange-400"; exhaustFlameL.material.color.setHex(0x00ffff); exhaustFlameR.material.color.setHex(0x00ffff);
+                    } else {
+                        car.isAeroBoosting = false; driftIndicator.innerText = "NORMAL"; driftIndicator.className = "absolute bottom-3 text-[10px] font-bold tracking-widest text-gray-400"; exhaustFlameL.material.color.setHex(0x00ffff); exhaustFlameR.material.color.setHex(0x00ffff);
+                    }
+                } else if (selectedCarType === 'handling') {
+                    if (car.startDashTimer > 0) {
+                        car.startDashTimer -= delta; activeMaxSpeed = MAX_SPEED + 45.0; activeAccel = ACCELERATION * 4.0;  
+                        driftIndicator.innerText = "ROCKET START!!"; driftIndicator.className = "absolute bottom-3 text-[13px] font-black tracking-widest text-cyan-400 animate-ping"; exhaustFlameL.material.color.setHex(0x00ffff); exhaustFlameR.material.color.setHex(0x00ffff);
+                    } else if (car.isBoosting) {
+                        activeMaxSpeed = MAX_SPEED + 35.0; activeAccel = ACCELERATION * 3.0;  
+                        exhaustFlameL.material.color.setHex(0xff00ff); exhaustFlameR.material.color.setHex(0xff00ff);
+                    } else {
+                        exhaustFlameL.material.color.setHex(0x00ffff); exhaustFlameR.material.color.setHex(0x00ffff);
+                    }
+                }
+
+                if (keys.w) {
+                    const speedRatio = Math.min(1.0, speedAbs / activeMaxSpeed); const dynamicAcceleration = activeAccel * (1.0 - Math.pow(speedRatio, 1.5) * 0.7); 
+                    car.speed += dynamicAcceleration * delta; if (car.speed > activeMaxSpeed) car.speed = activeMaxSpeed;
+                    if (car.speed > 5) {
+                        const s = Math.random() * 0.5 + 0.8; let bScale = 1.0;
+                        if (selectedCarType === 'handling' && car.isBoosting) bScale = 2.5;
+                        if (selectedCarType === 'handling' && car.startDashTimer > 0) bScale = 3.5; 
+                        if (selectedCarType === 'speed' && car.straightTimer > 1.0) bScale = 2.0;
+                        if (selectedCarType === 'balance' && car.nitroActiveTimer > 0) bScale = 2.8; 
+                        if (bScale > 1.0) { exhaustFlameL.visible = true; exhaustFlameR.visible = true; } else { exhaustFlameL.visible = Math.random() > 0.2; exhaustFlameR.visible = Math.random() > 0.2; }
+                        exhaustFlameL.scale.set(s, s, s * Math.max(0.5, speedRatio) * 2.5 * bScale); exhaustFlameR.scale.set(s, s, s * Math.max(0.5, speedRatio) * 2.5 * bScale);
+                    }
+                } else if (keys.s) { car.speed -= BRAKE_DECEL * delta; if (car.speed < -MAX_SPEED / 3) car.speed = -MAX_SPEED / 3; exhaustFlameL.visible = false; exhaustFlameR.visible = false; } 
+                else { exhaustFlameL.visible = false; exhaustFlameR.visible = false; if (car.speed > 0) { car.speed -= DECELERATION * delta; if (car.speed < 0) car.speed = 0; } else if (car.speed < 0) { car.speed += DECELERATION * delta; if (car.speed > 0) car.speed = 0; } }
+                if (car.speed > activeMaxSpeed) car.speed -= DECELERATION * 4.0 * delta; 
+
+                const steerReturnSpeed = 5.0; 
+                if (keys.a) car.steering += STEER_SPEED * delta; else if (keys.d) car.steering -= STEER_SPEED * delta; 
+                else { if (car.steering > 0) { car.steering -= steerReturnSpeed * delta; if (car.steering < 0) car.steering = 0; } else if (car.steering < 0) { car.steering += steerReturnSpeed * delta; if (car.steering > 0) car.steering = 0; } }
+                car.steering = THREE.MathUtils.clamp(car.steering, -1.0, 1.0);
+                const speedFactor = (speedAbs < 10) ? (speedAbs / 10) : Math.max(0.35, 1.0 - (speedAbs / activeMaxSpeed) * 0.45); 
+                car.angle += car.steering * BASE_TURN_SPEED * speedFactor * delta;
+
+                const forwardVec = new THREE.Vector3(-Math.sin(car.angle), 0, -Math.cos(car.angle));
+                const propulsion = forwardVec.clone().multiplyScalar(car.speed);
+                const isHighSpeedTurn = Math.abs(car.steering) > DRIFT_THRESHOLD && speedAbs > 35;
+                const grip = isHighSpeedTurn ? GRIP_FACTOR : 0.98;
+
+                car.velocity.x = THREE.MathUtils.lerp(car.velocity.x, propulsion.x, grip);
+                car.velocity.z = THREE.MathUtils.lerp(car.velocity.z, propulsion.z, grip);
+                const wasDrifting = car.isDrifting;
+
+                if (selectedCarType === 'handling') {
+                    if (isHighSpeedTurn) {
+                        car.isDrifting = true;
+                        car.driftCharge += delta * 0.75;
+                        if (car.driftCharge > 1.2) {
+                            car.driftCharge = 1.2; 
+                            driftIndicator.innerText = "MAX CHARGE!";
+                            driftIndicator.className = "absolute bottom-3 text-[12px] font-black tracking-widest text-purple-500 animate-bounce";
+                        } else if (car.driftCharge > 0.75) { 
+                            driftIndicator.innerText = "BOOST READY!";
+                            driftIndicator.className = "absolute bottom-3 text-[11px] font-black tracking-widest text-orange-500 animate-pulse";
+                        } else if (car.driftCharge > 0.3) {
+                            driftIndicator.innerText = "CHARGING..";
+                            driftIndicator.className = "absolute bottom-3 text-[11px] font-black tracking-widest text-yellow-500 animate-pulse";
+                        } else {
+                            driftIndicator.innerText = "DRIFTING!";
+                            driftIndicator.className = "absolute bottom-3 text-[11px] font-black tracking-widest text-red-600 animate-pulse";
+                        }
+                    } else {
+                        car.isDrifting = false;
+                        if (wasDrifting && car.driftCharge > 0.75) { 
+                            car.isBoosting = true;
+                            car.boostTimer = car.driftCharge * 3.0; 
+                            car.driftCharge = 0; 
+                            
+                            car.speed = Math.max(car.speed, car.speed + 22.0); 
+                            flashScreen('rgba(255, 0, 255, 0.2)'); 
+                            playSkillSound('turbo'); 
+                        } else if (wasDrifting) {
+                            car.driftCharge = 0;
+                        }
+                        
+                        if (car.isBoosting) {
+                            car.boostTimer -= delta;
+                            driftIndicator.innerText = "BOOST!!";
+                            driftIndicator.className = "absolute bottom-3 text-[13px] font-black tracking-widest text-cyan-400 animate-ping";
+                            if (car.boostTimer <= 0) {
+                                car.isBoosting = false;
+                                car.boostTimer = 0;
+                            }
+                        } else {
+                            car.driftCharge = 0;
+                            driftIndicator.innerText = "NORMAL";
+                            driftIndicator.className = "absolute bottom-3 text-[10px] font-bold tracking-widest text-gray-400";
+                        }
+                    }
+                } else {
+                    car.isDrifting = isHighSpeedTurn;
+                    if (car.isDrifting) { driftIndicator.innerText = "DRIFTING!"; driftIndicator.className = "absolute bottom-3 text-[11px] font-black tracking-widest text-orange-400 animate-pulse"; } 
+                    else { driftIndicator.innerText = "NORMAL"; driftIndicator.className = "absolute bottom-3 text-[10px] font-bold tracking-widest text-gray-400"; }
+                }
+            } else { car.velocity.y -= GRAVITY * delta; exhaustFlameL.visible = false; exhaustFlameR.visible = false; }
+
+            car.position.x += car.velocity.x * delta; car.position.y += car.velocity.y * delta; car.position.z += car.velocity.z * delta;
+            checkGroundCollision();
+            if (isNaN(car.position.x) || isNaN(car.position.y) || isNaN(car.position.z)) { resetGame(); return; }
+
+            if (car.isGrounded) {
+                let targetPitch = 0; if (car.position.y > -19.0) targetPitch = Math.asin(curve.getTangentAt(closestU).normalize().y); 
+                car.pitch = THREE.MathUtils.lerp(car.pitch, targetPitch, 0.2);
+                const lateralVelocity = new THREE.Vector3().crossVectors(car.velocity, new THREE.Vector3(0, 1, 0)).dot(new THREE.Vector3(-Math.sin(car.angle), 0, -Math.cos(car.angle)));
+                const rollAngle = lateralVelocity * 0.005;
+                if (car.mesh) { car.mesh.position.copy(car.position); car.mesh.rotation.set(car.pitch, car.angle, rollAngle, 'YXZ'); }
+            } else if (car.mesh) { car.mesh.position.copy(car.position); }
+
+            currentRunHistory.push({ pos: car.position.clone(), rot: car.angle, pitch: car.pitch, speed: car.speed, isDrifting: car.isDrifting, currentU: car.currentU, time: gameTime });
+            updateRivalsPhysics(delta); calculatePositions(); checkSectorsAndFinish();
+
+            const skillSvg = document.getElementById('skillGaugeSvg');
+            const skillRing = document.getElementById('skillGaugeRing');
+            const speedContainer = document.getElementById('speedContainer');
+            
+            if (skillSvg && skillRing && speedContainer) {
+                skillSvg.classList.remove('hidden');
+                let chargeRatio = 0;
+                let ringColor = '#9ca3af'; 
+                let containerClass = "bg-white/90 backdrop-blur-md rounded-full w-32 h-32 md:w-36 md:h-36 border-4 border-gray-300 flex flex-col items-center justify-center text-gray-900 pointer-events-auto relative shadow-2xl transition-all duration-300";
+
+                if (selectedCarType === 'balance') {
+                    if (car.nitroActiveTimer > 0) {
+                        chargeRatio = car.nitroActiveTimer / carSettings.balance.boostDuration;
+                        ringColor = '#ff0000'; // ★ 赤に変更
+                        containerClass = "bg-red-950/90 backdrop-blur-md rounded-full w-32 h-32 md:w-36 md:h-36 border-4 flex flex-col items-center justify-center text-white pointer-events-auto relative animate-nitro-burst transition-all duration-100";
+                    } else {
+                        chargeRatio = car.nitroCharge / 100.0;
+                        ringColor = chargeRatio >= 0.999 ? '#f59e0b' : '#ef4444'; // ★ チャージ中も赤ベースに変更
+                    }
+                } else if (selectedCarType === 'handling') {
+                    if (car.isBoosting || car.startDashTimer > 0) {
+                        chargeRatio = car.isBoosting ? (car.boostTimer / 3.6) : (car.startDashTimer / 1.5); 
+                        ringColor = '#06b6d4'; 
+                        containerClass = "bg-cyan-950/90 backdrop-blur-md rounded-full w-32 h-32 md:w-36 md:h-36 border-4 border-cyan-400 flex flex-col items-center justify-center text-white pointer-events-auto relative shadow-[0_0_40px_rgba(6,182,212,0.9)] scale-[1.15] transition-all duration-75 animate-pulse";
+                    } else {
+                        chargeRatio = car.driftCharge / 1.2;
+                        if (chargeRatio > 0.99) ringColor = '#a855f7';
+                        else if (chargeRatio > 0.75) ringColor = '#f59e0b';
+                        else ringColor = '#eab308'; 
+                    }
+                } else if (selectedCarType === 'speed') {
+                    if (car.isAeroBoosting) {
+                        chargeRatio = 1.0;
+                        ringColor = '#f59e0b'; 
+                        containerClass = "bg-orange-950/90 backdrop-blur-md rounded-full w-32 h-32 md:w-36 md:h-36 border-4 border-orange-500 flex flex-col items-center justify-center text-white pointer-events-auto relative shadow-[0_0_40px_rgba(249,115,22,0.9)] animate-meter-shake";
+                    } else {
+                        chargeRatio = car.straightTimer / 1.0;
+                        ringColor = chargeRatio >= 0.99 ? '#f59e0b' : '#14b8a6'; 
+                    }
+                }
+
+                chargeRatio = Math.max(0, Math.min(1.0, chargeRatio));
+                skillRing.style.strokeDashoffset = 365 - (365 * chargeRatio);
+                skillRing.setAttribute('stroke', ringColor);
+                speedContainer.className = containerClass;
+            }
+
+            const currentSpeedKmh = Math.round(car.speed * 4); const speedEl = document.getElementById('speed');
+            if (currentSpeedKmh < 0) { speedEl.innerText = "R " + Math.abs(currentSpeedKmh); speedEl.className = "text-4xl md:text-5xl font-black font-mono text-gray-400 transition-colors duration-300 z-10 tracking-tighter"; } 
+            else {
+                speedEl.innerText = currentSpeedKmh;
+                if (selectedCarType === 'handling' && (car.startDashTimer > 0 || car.isBoosting)) speedEl.className = "text-5xl md:text-6xl font-black font-mono text-cyan-300 drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] italic z-10 transition-all duration-75 tracking-tighter";
+                else if (selectedCarType === 'speed' && car.isAeroBoosting) speedEl.className = "text-5xl md:text-6xl font-black font-mono text-transparent bg-clip-text bg-gradient-to-t from-red-500 to-yellow-300 italic drop-shadow-[0_0_10px_rgba(255,165,0,0.8)] z-10 transition-all duration-75 tracking-tighter";
+                else if (selectedCarType === 'balance' && car.nitroActiveTimer > 0) speedEl.className = "text-5xl md:text-6xl font-black font-mono text-white drop-shadow-[0_0_15px_rgba(255,0,0,1)] italic z-10 transition-all duration-75 tracking-tighter"; // ★ 文字のシャドウを赤に変更
+                else speedEl.className = "text-4xl md:text-5xl font-black font-mono text-red-600 transition-all duration-300 z-10 tracking-tighter";
+            }
+        }
+
+        function checkGroundCollision() {
+            let closestDist = Infinity; closestPt = null; 
+            for (let i = 0; i < roadLookupPoints.length; i++) {
+                const testPt = roadLookupPoints[i]; const dx = car.position.x - testPt.x; const dy = (car.position.y - testPt.y) * 4.0; const dz = car.position.z - testPt.z;
+                const d = dx*dx + dy*dy + dz*dz; 
+                if (d < closestDist) { closestDist = d; closestU = i / roadLookupPoints.length; closestPt = testPt; }
+            }
+            car.currentU = closestU; const tangent = curve.getTangentAt(closestU).normalize(); const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+            car.distanceTravelled = closestU * curveLength;
+            car.offsetX = new THREE.Vector2(car.position.x - closestPt.x, car.position.z - closestPt.z).dot(new THREE.Vector2(normal.x, normal.z));
+            const targetY = closestPt.y + 0.1; const onCourse = Math.abs(car.offsetX) <= grassWidth / 2 && Math.abs(car.position.y - targetY) < 15.0;
+            if (onCourse) {
+                car.isGrounded = true; car.velocity.y = 0; car.position.y = targetY; 
+                if (Math.abs(car.offsetX) > (roadWidth / 2) + 0.8) {
+                    if (car.speed > 60) {
+                        car.speed *= (selectedCarType === 'handling' ? 0.97 : 0.93); 
+                        if (car.mesh) { car.mesh.rotation.z += (Math.random() - 0.5) * 0.20; car.mesh.rotation.x += (Math.random() - 0.5) * 0.20; }
+                        flashScreen('rgba(139, 69, 19, 0.15)'); 
+                    }
+                }
+            } else { car.isGrounded = false; }
+            if (Math.abs(car.offsetX) > 120 || car.position.y < -50) { if (gameState === 'PLAYING') { resetGame(); flashScreen('rgba(255, 0, 0, 0.3)'); } }
+        }
+
+        function finishRace() {
+            finished = true; isRunning = false; stopBGM(); const ann = document.getElementById('announcement'); let isNewRecord = false;
+            if (bestTime === null || gameTime < bestTime) {
+                bestTime = gameTime; bestRunHistory = [...currentRunHistory]; bestSectorTimes = [...car.sectorTimes]; isNewRecord = true;
+                document.getElementById('bestTime').innerText = formatTime(bestTime); rollRivalConditions(); saveBestRun();       
+            }
+            let unlockedAnyColor = false;
+            missions.forEach(m => {
+                if (!m.done) {
+                    if (m.targetType === 'complete' || (m.targetType === 'time' && gameTime <= m.targetValue) || (m.targetType === 'win' && finalPlace === 1)) { m.done = true; unlockedAnyColor = true; }
+                }
+            });
+            if (unlockedAnyColor) { saveMissionsAndColors(); flashScreen('rgba(234,179,8,0.4)'); }
+            let rankText = "th"; if (finalPlace === 1) rankText = "st"; else if (finalPlace === 2) rankText = "nd"; else if (finalPlace === 3) rankText = "rd";
+            if (isNewRecord && finalPlace === 1) { ann.innerText = "LAP RECORD & 1st PLACE!"; ann.className = "text-5xl font-black italic tracking-widest text-yellow-400 racing-text transition-all duration-300 transform scale-110 opacity-100 font-mono animate-bounce"; } 
+            else { ann.innerText = `${finalPlace}${rankText} PLACE!`; ann.className = "text-7xl font-black italic tracking-widest text-white racing-text transition-all duration-300 transform scale-100 opacity-100 font-mono"; }
+        }
+
+        function calculatePositions() {
+            if (!isRunning || finished) return;
+            const allVehicles = [ { id: 'player', currentU: car.currentU, distance: car.distanceTravelled, isPlayer: true } ];
+            rivals.forEach(rival => allVehicles.push({ id: rival.id, currentU: rival.currentU, distance: rival.currentU * curveLength, isPlayer: false }));
+            allVehicles.sort((a, b) => b.currentU - a.currentU); finalPlace = allVehicles.findIndex(v => v.isPlayer) + 1; 
+            let posSuffix = "th"; if (finalPlace === 1) posSuffix = "st"; else if (finalPlace === 2) posSuffix = "nd"; else if (finalPlace === 3) posSuffix = "rd";
+            document.getElementById('positionText').innerHTML = `${finalPlace}<span class="text-xs text-blue-400 font-extrabold">${posSuffix}</span> <span class="text-xs text-gray-400 font-normal">/ 8</span>`;
+        }
+
+        function checkSectorsAndFinish() {
+            if (car.currentU > 0.33 && car.currentU < 0.4 && !car.passedSectors[0]) recordSector(0);
+            if (car.currentU > 0.4 && car.currentU < 0.6) checkpointPassed = true;
+            if (car.currentU > 0.66 && car.currentU < 0.75 && !car.passedSectors[1]) recordSector(1);
+            if (checkpointPassed && (car.currentU < 0.02 || car.currentU > 0.98)) {
+                if (car.velocity.clone().normalize().dot(curve.getTangentAt(0).normalize()) > 0) { if (!car.passedSectors[2]) recordSector(2); finishRace(); }
+            }
+        }
+
+        function recordSector(index) { car.passedSectors[index] = true; car.sectorTimes[index] = gameTime; showSectorUI(index, gameTime); }
+        function showSectorUI(index, time) {
+            const ui = document.getElementById('sectorTimeUI'); const diffEl = document.getElementById('sectorDiff');
+            document.getElementById('sectorTitle').innerText = index === 2 ? `LAP TIME` : `SECTOR ${index + 1}`;
+            if (bestSectorTimes && bestSectorTimes[index] !== null) {
+                const diff = time - bestSectorTimes[index]; const formatDiff = Math.abs(diff).toFixed(2);
+                if (diff <= 0) { diffEl.innerText = `-${formatDiff}`; diffEl.className = "text-5xl font-black font-mono tracking-tight mt-1 text-blue-400 racing-text drop-shadow-[0_0_15px_rgba(96,165,250,0.8)]"; } 
+                else { diffEl.innerText = `+${formatDiff}`; diffEl.className = "text-5xl font-black font-mono tracking-tight mt-1 text-red-500 racing-text drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]"; }
+            } else { diffEl.innerText = formatTime(time); diffEl.className = "text-5xl font-black font-mono tracking-tight mt-1 text-white racing-text drop-shadow-lg"; }
+            ui.style.opacity = '1'; ui.style.transform = 'translate(-50%, 0) scale(1.2)';
+            setTimeout(() => { ui.style.transform = 'translate(-50%, 0) scale(1.0)'; }, 50);
+            if (sectorUITimeout) clearTimeout(sectorUITimeout);
+            sectorUITimeout = setTimeout(() => { ui.style.opacity = '0'; ui.style.transform = 'translate(-50%, 0) scale(0.9)'; }, 2000);
+        }
+
+        function updateRivalsPhysics(delta) {
+            const RIVAL_MAX_SPEED = 92.5; const sortedRivals = [...rivals].sort((a, b) => b.currentU - a.currentU);
+            rivals.forEach(rival => {
+                const pt = curve.getPointAt(rival.currentU); const tangent = curve.getTangentAt(rival.currentU).normalize();
+                const t1 = curve.getTangentAt((rival.currentU + 15.0 / curveLength) % 1.0).normalize(); const t2 = curve.getTangentAt((rival.currentU + 45.0 / curveLength) % 1.0).normalize();
+                const curveSharpness = Math.max(Math.abs(tangent.angleTo(t1)), Math.abs(t1.angleTo(t2)) * 0.85); 
+                const currentSharpness = Math.abs(tangent.angleTo(curve.getTangentAt((rival.currentU + 5.0 / curveLength) % 1.0).normalize()));
+                
+                rival.offsetX = THREE.MathUtils.lerp(rival.offsetX || rival.baseOffsetX, THREE.MathUtils.clamp(rival.baseOffsetX + Math.sin(gameTime * 2.5 + rival.noiseSeed) * 0.8, -18.0, 18.0), 1.0 - Math.exp(-2.0 * delta));
+                let speedMult = 1.0; const sThresh = rival.brakingPoint + 0.06; const mThresh = rival.brakingPoint + 0.02;   
+                if (curveSharpness > sThresh) { speedMult = Math.max(0.46, 1.0 - (curveSharpness - sThresh) * 3.5); rival.isDrifting = currentSharpness > rival.driftAggressiveness; } 
+                else if (curveSharpness > mThresh) { speedMult = Math.max(0.75, 1.0 - (curveSharpness - mThresh) * 1.5); rival.isDrifting = (currentSharpness > rival.driftAggressiveness); } 
+                else { speedMult = 1.48 + (mThresh - curveSharpness) * 2.0; rival.isDrifting = false; }
+
+                let targetSpeed = (1.0 / rival.targetLapTime) * speedMult * 1.35 * curveLength;
+                let diffU = car.currentU - rival.currentU; if (diffU > 0.5) diffU -= 1.0; if (diffU < -0.5) diffU += 1.0; let distToPlayer = diffU * curveLength;
+                let rubber = 1.0; if (distToPlayer > 15.0) rubber = 1.0 + 0.06 * Math.min(1.0, (distToPlayer - 15.0) / 120.0); else if (distToPlayer < -15.0) rubber = 1.0 - 0.06 * Math.min(1.0, (-distToPlayer - 15.0) / 120.0);
+                targetSpeed *= rubber;
+
+                const isStruggling = rival.conditionText.includes("Struggling"); let packMult = 1.0; 
+                if (!isStruggling) {
+                    let targetLeader = null; for (let i = sortedRivals.findIndex(r => r.id === rival.id) - 1; i >= 0; i--) { if (!sortedRivals[i].conditionText.includes("Struggling")) { targetLeader = sortedRivals[i]; break; } }
+                    if (targetLeader) {
+                        let uDiff = targetLeader.currentU - rival.currentU; if (uDiff < 0) uDiff += 1.0; const dMetres = uDiff * curveLength;
+                        if (dMetres > 8.0 && dMetres < 45.0) { targetSpeed = THREE.MathUtils.lerp(targetSpeed, targetLeader.speed * 1.04, 0.45); packMult = 1.04; } else if (dMetres <= 8.0) { targetSpeed *= 0.95; }
+                    }
+                }
+                targetSpeed = Math.max(targetSpeed, RIVAL_MAX_SPEED * (isStruggling ? 0.48 : 0.55)); targetSpeed *= Math.pow(Math.min(1.0, gameTime / 3.0), 2.0);
+
+                if (rival.slipstreamCooldown > 0) rival.slipstreamCooldown -= delta;
+                if (rival.slipstreamTimer > 0) { rival.slipstreamTimer -= delta; rival.isSlipstreaming = true; } else rival.isSlipstreaming = false;
+                targetSpeed += (rival.isSlipstreaming ? 2.5 : 0); targetSpeed = Math.min(targetSpeed, Math.max(20, RIVAL_MAX_SPEED * Math.max(1.0, rubber) * packMult + (rival.isSlipstreaming ? 2.5 : 0)));
+                
+                rival.speed = THREE.MathUtils.lerp(rival.speed, targetSpeed, 1.0 - Math.exp(-(targetSpeed < rival.speed ? 3.2 + Math.min(4.5, (rival.speed - targetSpeed) * 0.12) : 3.5 + Math.min(2.0, (targetSpeed - rival.speed) * 0.08)) * delta));
+                rival.currentU += (rival.speed * delta) / curveLength;
+                if (rival.currentU > 1.0) {
+                    rival.currentU -= 1.0;
+                    if (isRunning && !finished) {
+                        const prevCond = rival.condition; const rand = Math.random();
+                        if (rand < 0.25) { rival.condition = 0.85; rival.conditionText = "Superb 🔥"; } else if (rand < 0.55) { rival.condition = 0.93; rival.conditionText = "Good 📈"; } else if (rand < 0.8) { rival.condition = 1.0; rival.conditionText = "Normal"; } else { rival.condition = 1.01; rival.conditionText = "Struggling 💤"; }
+                        rival.targetLapTime = bestTime ? Math.max(10.0, (bestTime + ([0,-0.5,3.5,0.5,2.5,-2.5,5.0,1.5][rival.id] * (COURSES[currentCourseId].lapTarget / 105.0))) * rival.condition) : COURSES[currentCourseId].lapTarget * rival.paceFactor * rival.condition;
+                        const tEl = document.getElementById(`rival${rival.id}Target`); if (tEl) tEl.innerHTML = `<span class="${rival.condition < 0.90 ? 'text-rose-500 font-black px-1 py-0.5 rounded animate-bounce' : (rival.condition < 0.95 ? 'text-amber-400 font-bold' : (rival.condition === 1.0 ? 'text-gray-300' : 'text-blue-400'))} animate-pulse">${rival.conditionText}</span>`;
+                        if (rival.condition < prevCond && prevCond - rival.condition > 0.02) rival.paceUpSparkTimer = 1.5; 
+                    }
+                }
+
+                const newPt = curve.getPointAt(rival.currentU); const newTangent = curve.getTangentAt(rival.currentU).normalize();
+                let sAmount = currentSharpness > 0.03 ? Math.min(4.5, (currentSharpness - 0.03) * 35.0) : 0;
+                rival.currentDriftSlide = THREE.MathUtils.lerp(rival.currentDriftSlide || 0, ((tangent.x * t1.z - tangent.z * t1.x) > 0 ? -sAmount : sAmount), 1.0 - Math.exp(-1.6 * delta));
+                const tPos = newPt.clone().addScaledVector(new THREE.Vector3(-newTangent.z, 0, newTangent.x).normalize(), rival.offsetX + rival.currentDriftSlide); tPos.y += 0.1; 
+                rival.position.copy(tPos); if (rival.mesh) rival.mesh.position.copy(rival.position);
+                
+                let dAngle = Math.atan2(-newTangent.x, -newTangent.z) - rival.angle; rival.angle += Math.atan2(Math.sin(dAngle), Math.cos(dAngle)) * (1.0 - Math.exp(-4.2 * delta));
+                rival.pitch = THREE.MathUtils.lerp(rival.pitch, Math.asin(newTangent.y), 1.0 - Math.exp(-12 * delta));
+                if (rival.mesh) rival.mesh.rotation.set(rival.pitch, rival.angle, THREE.MathUtils.lerp(rival.mesh.rotation.z || 0, ((tangent.x * t1.z - tangent.z * t1.x) > 0 ? 0.08 : -0.08) * Math.min(1.0, sAmount / 3.0), 1.0 - Math.exp(-5.0 * delta)), 'YXZ');
+
+                if (rival.speed > 30) {
+                    let s = Math.random() * 0.4 + 0.6;
+                    if (rival.paceUpSparkTimer > 0) { rival.paceUpSparkTimer -= delta; s *= 2.2; rival.flameL.material.color.setHex(0xff3300); rival.flameR.material.color.setHex(0xff3300); rival.flameL.visible = true; rival.flameR.visible = true; } 
+                    else if (rival.isSlipstreaming) { s *= 1.6; rival.flameL.material.color.setHex(0x00ff88); rival.flameR.material.color.setHex(0x00ff88); rival.flameL.visible = true; rival.flameR.visible = true; } 
+                    else { const fCol = rival.condition < 0.90 ? 0xff0000 : (rival.condition < 0.95 ? 0xff6600 : 0x00ffff); rival.flameL.material.color.setHex(fCol); rival.flameR.material.color.setHex(fCol); rival.flameL.visible = Math.random() > 0.2; rival.flameR.visible = Math.random() > 0.2; }
+                    rival.flameL.scale.set(s, s, s * Math.min(1.0, rival.speed / 87.5) * 2.0); rival.flameR.scale.set(s, s, s * Math.min(1.0, rival.speed / 87.5) * 2.0);
+                } else { rival.flameL.visible = false; rival.flameR.visible = false; }
+                updateRivalTrails(rival);
+            });
+        }
+
+        // ================= エフェクト・カメラ描画 =================
+        function updateGhost(delta) {
+            if (!bestRunHistory || !ghostCar || !ghostCar.visible) return;
+            if (ghostIndex < bestRunHistory.length) { const r = bestRunHistory[ghostIndex]; ghostCar.position.copy(r.pos); ghostCar.rotation.set(0, r.rot, 0); ghostIndex++; } else { ghostCar.visible = false; }
+        }
+
+        function flashScreen(colorStr) {
+            const overlay = document.createElement('div'); overlay.style.position = 'fixed'; overlay.style.inset = '0'; overlay.style.backgroundColor = colorStr; overlay.style.pointerEvents = 'none'; overlay.style.zIndex = '5'; overlay.style.transition = 'opacity 0.2s ease-out'; document.body.appendChild(overlay);
+            requestAnimationFrame(() => { overlay.style.opacity = '0'; setTimeout(() => { document.body.removeChild(overlay); }, 100); });
+        }
+        function updateTimerUI() { document.getElementById('currentTime').innerText = formatTime(gameTime); }
+        function formatTime(t) { return `${Math.floor(t / 60).toString().padStart(2, '0')}:${Math.floor(t % 60).toString().padStart(2, '0')}.${Math.floor((t % 1) * 100).toString().padStart(2, '0')}`; }
+
+        function initMinimap() {
+            minimapCanvas = document.getElementById('minimap'); if (!minimapCanvas) return; minimapCtx = minimapCanvas.getContext('2d');
+            let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+            roadLookupPoints.forEach(pt => { if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x; if (pt.z < minZ) minZ = pt.z; if (pt.z > maxZ) maxZ = pt.z; });
+            const mapW = maxX - minX; const mapH = maxZ - minZ;
+            minimapScale = Math.min((minimapCanvas.width - 12) / mapW, (minimapCanvas.height - 12) / mapH);
+            minimapOffset.x = (minimapCanvas.width - mapW * minimapScale) / 2 - minX * minimapScale; minimapOffset.y = (minimapCanvas.height - mapH * minimapScale) / 2 - minZ * minimapScale;
+        }
+
+        function drawMinimap() {
+            if (!minimapCtx) return; minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+            minimapCtx.beginPath(); minimapCtx.strokeStyle = 'rgba(255, 255, 255, 0.15)'; minimapCtx.lineWidth = 3; minimapCtx.lineCap = 'round'; minimapCtx.lineJoin = 'round';
+            roadLookupPoints.forEach((pt, idx) => { const x = pt.x * minimapScale + minimapOffset.x; const y = pt.z * minimapScale + minimapOffset.y; if (idx === 0) minimapCtx.moveTo(x, y); else minimapCtx.lineTo(x, y); }); minimapCtx.stroke();
+            minimapCtx.beginPath(); minimapCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; minimapCtx.lineWidth = 1;
+            roadLookupPoints.forEach((pt, idx) => { const x = pt.x * minimapScale + minimapOffset.x; const y = pt.z * minimapScale + minimapOffset.y; if (idx === 0) minimapCtx.moveTo(x, y); else minimapCtx.lineTo(x, y); }); minimapCtx.stroke();
+            
+            minimapCtx.beginPath(); minimapCtx.arc(roadLookupPoints[0].x * minimapScale + minimapOffset.x, roadLookupPoints[0].z * minimapScale + minimapOffset.y, 1.5, 0, Math.PI * 2); minimapCtx.fillStyle = '#eab308'; minimapCtx.fill();
+            if (ghostCar && ghostCar.visible) { minimapCtx.beginPath(); minimapCtx.arc(ghostCar.position.x * minimapScale + minimapOffset.x, ghostCar.position.z * minimapScale + minimapOffset.y, 1.2, 0, Math.PI * 2); minimapCtx.fillStyle = '#60a5fa'; minimapCtx.fill(); }
+
+            rivals.forEach(rival => { minimapCtx.beginPath(); minimapCtx.arc(rival.position.x * minimapScale + minimapOffset.x, rival.position.z * minimapScale + minimapOffset.y, 1.5, 0, Math.PI * 2); minimapCtx.fillStyle = ['','#22c55e','#f97316','#3b82f6','#a855f7','#ec4899','#eab308','#14b8a6'][rival.id]; minimapCtx.fill(); });
+            
+            minimapCtx.save(); minimapCtx.translate(car.position.x * minimapScale + minimapOffset.x, car.position.z * minimapScale + minimapOffset.y); minimapCtx.rotate(-car.angle); 
+            minimapCtx.beginPath(); minimapCtx.moveTo(0, -2.5); minimapCtx.lineTo(-1.8, 1.8); minimapCtx.lineTo(1.8, 1.8); minimapCtx.fillStyle = '#ef4444'; minimapCtx.fill(); minimapCtx.restore();
+        }
+
+        function updateCamera(delta) {
+            if (!car.mesh) return;
+            if (gameState === 'PREVIEW' || gameState === 'GARAGE') {
+                if (!isDraggingPreview) previewCameraAngle += delta * 0.15; 
+                camera.position.set(Math.sin(previewCameraAngle) * 7.5, 1000 + previewCameraHeight, Math.cos(previewCameraAngle) * 7.5); camera.lookAt(new THREE.Vector3(0, 1000.4, 0)); return;
+            }
+            const speedRatio = Math.abs(car.speed) / MAX_SPEED; const distance = 10.0 + Math.pow(speedRatio, 1.5) * 4.0; const height = 3.5 + speedRatio * 0.5; 
+            let targetFov = 70 + speedRatio * 15; 
+            if (selectedCarType === 'handling' && car.isBoosting) targetFov += 15;
+            if (selectedCarType === 'speed' && car.straightTimer > 1.0) targetFov += 15;
+            if (selectedCarType === 'balance' && car.nitroActiveTimer > 0) targetFov += 15; 
+
+            camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 1.0 - Math.exp(-6 * delta)); camera.updateProjectionMatrix();
+            let targetCamPos = new THREE.Vector3(car.mesh.position.x + Math.sin(car.angle) * distance, car.mesh.position.y + height, car.mesh.position.z + Math.cos(car.angle) * distance);
+            if (speedRatio > 0.7) { const shake = (speedRatio - 0.7) * 0.2; targetCamPos.x += (Math.random() - 0.5) * shake; targetCamPos.y += (Math.random() - 0.5) * shake; targetCamPos.z += (Math.random() - 0.5) * shake; }
+            camera.position.lerp(targetCamPos, 1.0 - Math.exp(-18 * delta));
+            
+            let lookAheadU = car.currentU + 0.005 + (speedRatio * 0.01); if (lookAheadU > 1.0) lookAheadU -= 1.0;
+            const finalLookAt = new THREE.Vector3().lerpVectors(new THREE.Vector3(car.mesh.position.x - Math.sin(car.angle) * (15 + speedRatio * 10), car.mesh.position.y + 1.0, car.mesh.position.z - Math.cos(car.angle) * (15 + speedRatio * 10)), curve.getPointAt(lookAheadU), 0.12); finalLookAt.y = car.mesh.position.y + 1.0; 
+            camera.lookAt(finalLookAt);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // ==========================================
+        // ★ 車体3Dエフェクトのアニメーション制御 ★
+        // ==========================================
+        function updateCarEffects(delta) {
+            if (!car.mesh) return;
+            const currentCarType = selectedCarType;
+            let activeSkill = false;
+            
+            if (currentCarType === 'speed' && car.isAeroBoosting) activeSkill = true;
+            if (currentCarType === 'balance' && car.nitroActiveTimer > 0) activeSkill = true;
+            if (currentCarType === 'handling' && (car.isBoosting || car.startDashTimer > 0)) activeSkill = true;
+
+            if (activeSkill) {
+                // ■ TYPE-S 演出 (オーバードライブ・ヒート ＋ ウィンド・ストリーム)
+                if (currentCarType === 'speed' && car.sparks) {
+                    car.sparks.material.opacity = 1;
+                    car.mesh.traverse(child => {
+                        if (child.isMesh && child.geometry && child.geometry.type === "BoxGeometry" && (child.scale.x === 1 || child.position.y === 0.5)) {
+                            child.material.emissive.setHex(0xff3300);
+                            child.material.emissiveIntensity = 0.8 + Math.random() * 0.4;
+                        }
+                    });
+                    for(let i = 0; i < 40; i++) {
+                        let sd = car.sparkData[i];
+                        if (!sd.active) {
+                            if (Math.random() < 0.3) {
+                                sd.active = true; sd.life = 1.0;
+                                sd.offset.set((Math.random() - 0.5) * 2.0, 0.2 + Math.random() * 0.5, -2.2);
+                            } else {
+                                car.sparkPos[i*3] = 0; car.sparkPos[i*3+1] = -10; car.sparkPos[i*3+2] = 0;
+                            }
+                        } else {
+                            sd.life -= delta * 2.5;
+                            sd.offset.z += delta * 20.0;
+                            sd.offset.x += (Math.random() - 0.5) * delta * 4.0;
+                            sd.offset.y += (Math.random() - 0.5) * delta * 4.0;
+                            car.sparkPos[i*3] = sd.offset.x; car.sparkPos[i*3+1] = sd.offset.y; car.sparkPos[i*3+2] = sd.offset.z;
+                            if (sd.life <= 0) sd.active = false;
+                        }
+                    }
+                    car.sparks.geometry.attributes.position.needsUpdate = true;
+                    
+                    // ウィンド・ストリームのアニメーション更新（柔らかい明滅と波動）
+                    if (car.windStreams) {
+                        car.windStreams.children.forEach(stream => {
+                            stream.userData.phase += delta * stream.userData.speed;
+                            
+                            // サイン波を使って、風が波打つように柔らかく明滅させる
+                            const intensity = (Math.sin(stream.userData.phase) + 1.0) / 2.0; // 0.0 ~ 1.0
+                            stream.material.opacity = intensity * 0.7; 
+                            
+                            // 風が後ろへ流れるように全体を少しZ軸にスライド
+                            stream.position.z = stream.userData.baseZ - (intensity * 1.0);
+                            
+                            // 線の太さ（X/Y軸）も脈動させる
+                            const thickness = 0.6 + intensity * 0.8;
+                            stream.scale.set(thickness, thickness, 1.0);
+                        });
+                    }
+
+                    car.wasAeroBoosting = true;
+                } else if(car.sparks) { 
+                    car.sparks.material.opacity = 0;
+                    if (car.windStreams) car.windStreams.children.forEach(s => s.material.opacity = 0);
+                    if (car.wasAeroBoosting) {
+                        car.mesh.traverse(child => {
+                            if (child.isMesh && child.geometry && child.geometry.type === "BoxGeometry" && (child.scale.x === 1 || child.position.y === 0.5)) {
+                                child.material.emissive.setHex(carSettings.speed.emissive);
+                                child.material.emissiveIntensity = 0.3;
+                            }
+                        });
+                        car.wasAeroBoosting = false;
+                    }
+                }
+                
+                // ■ TYPE-B 演出 (ライト・トレイル軌跡のみ)
+                if (currentCarType === 'balance') {
+                    const MAX_TRAIL = 30;
+                    const offsetL = new THREE.Vector3(-0.8, 0.5, 2.2).applyMatrix4(car.mesh.matrixWorld); 
+                    const offsetR = new THREE.Vector3(0.8, 0.5, 2.2).applyMatrix4(car.mesh.matrixWorld); 
+                    for(let i = MAX_TRAIL - 1; i > 0; i--) {
+                        car.lightTrailPosL[i*3] = car.lightTrailPosL[(i-1)*3]; car.lightTrailPosL[i*3+1] = car.lightTrailPosL[(i-1)*3+1]; car.lightTrailPosL[i*3+2] = car.lightTrailPosL[(i-1)*3+2];
+                        car.lightTrailPosR[i*3] = car.lightTrailPosR[(i-1)*3]; car.lightTrailPosR[i*3+1] = car.lightTrailPosR[(i-1)*3+1]; car.lightTrailPosR[i*3+2] = car.lightTrailPosR[(i-1)*3+2];
+                    }
+                    car.lightTrailPosL[0] = offsetL.x; car.lightTrailPosL[1] = offsetL.y; car.lightTrailPosL[2] = offsetL.z;
+                    car.lightTrailPosR[0] = offsetR.x; car.lightTrailPosR[1] = offsetR.y; car.lightTrailPosR[2] = offsetR.z;
+                    
+                    car.lightTrailGeoL.attributes.position.needsUpdate = true;
+                    car.lightTrailGeoR.attributes.position.needsUpdate = true;
+                    car.lightTrailLineL.visible = true;
+                    car.lightTrailLineR.visible = true;
+                } else {
+                    if(car.lightTrailLineL) { car.lightTrailLineL.visible = false; car.lightTrailLineR.visible = false; }
+                }
+
+                // ■ TYPE-M 演出 (サイバー・ライトニング)
+                if (currentCarType === 'handling' && car.lightnings) {
+                    const colorCyan = 0x00ffff;
+                    const colorPurple = 0xa855f7;
+                    
+                    car.lightnings.forEach((lightning) => {
+                        // 水色と紫をランダムに点滅
+                        lightning.mesh.material.color.setHex(Math.random() > 0.5 ? colorCyan : colorPurple);
+                        lightning.mesh.material.opacity = 0.6 + Math.random() * 0.4;
+                        
+                        // 車の周囲でランダムな始点と終点を決める
+                        const start = new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 2, (Math.random() - 0.5) * 6);
+                        const end = new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 2, (Math.random() - 0.5) * 6);
+                        
+                        const pts = lightning.positions;
+                        const segments = 8;
+                        pts[0] = start.x; pts[1] = start.y; pts[2] = start.z;
+                        
+                        // 始点と終点の間をジグザグに結ぶ
+                        for (let i = 1; i < segments - 1; i++) {
+                            const t = i / (segments - 1);
+                            const lx = start.x + (end.x - start.x) * t;
+                            const ly = start.y + (end.y - start.y) * t;
+                            const lz = start.z + (end.z - start.z) * t;
+                            const jitter = 1.2; // 稲妻のブレ幅
+                            pts[i*3] = lx + (Math.random() - 0.5) * jitter;
+                            pts[i*3+1] = ly + (Math.random() - 0.5) * jitter;
+                            pts[i*3+2] = lz + (Math.random() - 0.5) * jitter;
+                        }
+                        pts[(segments-1)*3] = end.x; pts[(segments-1)*3+1] = end.y; pts[(segments-1)*3+2] = end.z;
+                        
+                        lightning.mesh.geometry.attributes.position.needsUpdate = true;
+                    });
+                } else if(car.lightnings) { 
+                    car.lightnings.forEach(lightning => lightning.mesh.material.opacity = 0); 
+                }
+            } else {
+                if(car.sparks) {
+                    car.sparks.material.opacity = 0;
+                    if (car.windStreams) car.windStreams.children.forEach(s => s.material.opacity = 0);
+                    if (car.wasAeroBoosting) {
+                        car.mesh.traverse(child => {
+                            if (child.isMesh && child.geometry && child.geometry.type === "BoxGeometry" && (child.scale.x === 1 || child.position.y === 0.5)) {
+                                child.material.emissive.setHex(carSettings.speed.emissive);
+                                child.material.emissiveIntensity = 0.3;
+                            }
+                        });
+                        car.wasAeroBoosting = false;
+                    }
+                }
+                if(car.lightTrailLineL) { car.lightTrailLineL.visible = false; car.lightTrailLineR.visible = false; }
+                if(car.lightnings) { car.lightnings.forEach(lightning => lightning.mesh.material.opacity = 0); }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(0.1, clock.getDelta());
+            updatePhysics(delta); updateGhost(delta); updateTrails(); updateSpeedLines(delta); updateCarEffects(delta); updateCamera(delta); drawMinimap(); updateAudio();
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function() { init(); };
+    </script>
+</body>
+</html>
