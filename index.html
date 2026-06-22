@@ -1703,7 +1703,7 @@
         function resetGame(isPreview = false) {
             car.speed = 0; car.steering = 0; car.offsetX = 0; car.distanceTravelled = 0.5; car.pitch = 0; car.currentU = 0;
             car.driftCharge = 0; car.boostTimer = 0; car.isBoosting = false; car.straightTimer = 0; car.nitroCharge = 0; car.nitroActiveTimer = 0;
-            car.earlyStart = false; car.startDashUsed = false; car.startDashTimer = 0; car.isAeroBoosting = false;
+            car.earlyStart = false; car.startDashUsed = false; car.startDashTimer = 0; car.isAeroBoosting = false; car.wasSkillActive = false;
             car.sectorTimes = [null, null, null]; car.passedSectors = [false, false, false];
             keys.w = false; keys.a = false; keys.s = false; keys.d = false; keys.shift = false; keys.space = false; stopBGM();
             updateCarMaterials(selectedCarType);
@@ -1908,6 +1908,23 @@
                 if (car.mesh) { car.mesh.position.copy(car.position); car.mesh.rotation.set(car.pitch, car.angle, rollAngle, 'YXZ'); }
             } else if (car.mesh) { car.mesh.position.copy(car.position); }
 
+            // ★ 案3：プレイヤースキルに対するライバルのカウンター発動
+            const isSkillCurrentlyActive = (selectedCarType === 'speed' && car.isAeroBoosting) || (selectedCarType === 'balance' && car.nitroActiveTimer > 0) || (selectedCarType === 'handling' && (car.isBoosting || car.startDashTimer > 0));
+            if (isSkillCurrentlyActive && !car.wasSkillActive) {
+                rivals.forEach(rival => {
+                    let diffU = car.currentU - rival.currentU; if (diffU > 0.5) diffU -= 1.0; if (diffU < -0.5) diffU += 1.0; let distToPlayer = diffU * curveLength;
+                    // プレイヤーのすぐ後ろ(-60m ～ -5m)にいるライバルが確率(70%)で闘争心を燃やす
+                    if (distToPlayer > -60.0 && distToPlayer < -5.0 && Math.random() < 0.7) {
+                        rival.condition = 0.82; // 通常の絶好調(0.85)よりさらに速い限界突破ペース
+                        rival.conditionText = "Counter 🔥";
+                        rival.paceUpSparkTimer = 3.5; // 3.5秒間カウンターブーストで猛追
+                        const tEl = document.getElementById(`rival${rival.id}Target`); 
+                        if (tEl) tEl.innerHTML = `<span class="text-rose-500 font-black px-1 py-0.5 rounded animate-bounce animate-pulse">${rival.conditionText}</span>`;
+                    }
+                });
+            }
+            car.wasSkillActive = isSkillCurrentlyActive;
+
             currentRunHistory.push({ pos: car.position.clone(), rot: car.angle, pitch: car.pitch, speed: car.speed, isDrifting: car.isDrifting, currentU: car.currentU, time: gameTime });
             updateRivalsPhysics(delta); calculatePositions(); checkSectorsAndFinish();
 
@@ -2060,7 +2077,16 @@
 
                 let targetSpeed = (1.0 / rival.targetLapTime) * speedMult * 1.35 * curveLength;
                 let diffU = car.currentU - rival.currentU; if (diffU > 0.5) diffU -= 1.0; if (diffU < -0.5) diffU += 1.0; let distToPlayer = diffU * curveLength;
-                let rubber = 1.0; if (distToPlayer > 15.0) rubber = 1.0 + 0.06 * Math.min(1.0, (distToPlayer - 15.0) / 120.0); else if (distToPlayer < -15.0) rubber = 1.0 - 0.06 * Math.min(1.0, (-distToPlayer - 15.0) / 120.0);
+                
+                // ★ 案2：ダイナミック・ラバーバンドの適用
+                let rubber = 1.0; 
+                if (distToPlayer > 15.0) {
+                    // プレイヤーが前にいる場合：距離15m〜150mの間で、最大+15%の猛追バフをジワジワかける
+                    rubber = 1.0 + 0.15 * Math.min(1.0, (distToPlayer - 15.0) / 135.0); 
+                } else if (distToPlayer < -15.0) {
+                    // プレイヤーが後ろにいる場合：プレイヤーを待つ優しさ補正（最大-6%）
+                    rubber = 1.0 - 0.06 * Math.min(1.0, (-distToPlayer - 15.0) / 120.0);
+                }
                 targetSpeed *= rubber;
 
                 const isStruggling = rival.conditionText.includes("Struggling"); let packMult = 1.0; 
@@ -2077,6 +2103,7 @@
                 if (rival.slipstreamTimer > 0) { rival.slipstreamTimer -= delta; rival.isSlipstreaming = true; } else rival.isSlipstreaming = false;
                 targetSpeed += (rival.isSlipstreaming ? 2.5 : 0); targetSpeed = Math.min(targetSpeed, Math.max(20, RIVAL_MAX_SPEED * Math.max(1.0, rubber) * packMult + (rival.isSlipstreaming ? 2.5 : 0)));
                 
+                // 加速の緩やかさ（慣性）はそのまま維持し、ワープ感をなくす
                 rival.speed = THREE.MathUtils.lerp(rival.speed, targetSpeed, 1.0 - Math.exp(-(targetSpeed < rival.speed ? 3.2 + Math.min(4.5, (rival.speed - targetSpeed) * 0.12) : 3.5 + Math.min(2.0, (targetSpeed - rival.speed) * 0.08)) * delta));
                 rival.currentU += (rival.speed * delta) / curveLength;
                 if (rival.currentU > 1.0) {
@@ -2102,7 +2129,13 @@
 
                 if (rival.speed > 30) {
                     let s = Math.random() * 0.4 + 0.6;
-                    if (rival.paceUpSparkTimer > 0) { rival.paceUpSparkTimer -= delta; s *= 2.2; rival.flameL.material.color.setHex(0xff3300); rival.flameR.material.color.setHex(0xff3300); rival.flameL.visible = true; rival.flameR.visible = true; } 
+                    // ★ ラバーバンド猛追状態のエフェクト追加
+                    if (rubber > 1.08) { 
+                        s *= 1.8; 
+                        rival.flameL.material.color.setHex(0xffaa00); rival.flameR.material.color.setHex(0xffaa00); 
+                        rival.flameL.visible = true; rival.flameR.visible = true; 
+                    }
+                    else if (rival.paceUpSparkTimer > 0) { rival.paceUpSparkTimer -= delta; s *= 2.2; rival.flameL.material.color.setHex(0xff3300); rival.flameR.material.color.setHex(0xff3300); rival.flameL.visible = true; rival.flameR.visible = true; } 
                     else if (rival.isSlipstreaming) { s *= 1.6; rival.flameL.material.color.setHex(0x00ff88); rival.flameR.material.color.setHex(0x00ff88); rival.flameL.visible = true; rival.flameR.visible = true; } 
                     else { const fCol = rival.condition < 0.90 ? 0xff0000 : (rival.condition < 0.95 ? 0xff6600 : 0x00ffff); rival.flameL.material.color.setHex(fCol); rival.flameR.material.color.setHex(fCol); rival.flameL.visible = Math.random() > 0.2; rival.flameR.visible = Math.random() > 0.2; }
                     rival.flameL.scale.set(s, s, s * Math.min(1.0, rival.speed / 87.5) * 2.0); rival.flameR.scale.set(s, s, s * Math.min(1.0, rival.speed / 87.5) * 2.0);
