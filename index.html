@@ -979,6 +979,15 @@
                 localStorage.removeItem(MISSIONS_KEY);
                 localStorage.removeItem(CUSTOM_COLORS_KEY);
 
+                // ★ 追加: ページを読み込む（リロードする）たびに、必ずセーブデータを強制消去する
+                sessionStorage.removeItem(MISSIONS_KEY);
+                sessionStorage.removeItem(CUSTOM_COLORS_KEY);
+
+                // ★ 追加: すべてのコースのベストタイムとゴーストデータもリセットする
+                ['suzuka', 'tsukuba', 'oval'].forEach(courseId => {
+                    localStorage.removeItem(STORAGE_KEY_BASE + courseId);
+                });
+
                 const savedMissions = sessionStorage.getItem(MISSIONS_KEY);
                 const savedColors = sessionStorage.getItem(CUSTOM_COLORS_KEY);
                 if (savedMissions) missions = JSON.parse(savedMissions);
