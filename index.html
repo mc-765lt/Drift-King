@@ -968,15 +968,19 @@
         // ================= セーブ / ロード処理 =================
         function saveMissionsAndColors() {
             try {
-                localStorage.setItem(MISSIONS_KEY, JSON.stringify(missions));
-                localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(customColors));
+                sessionStorage.setItem(MISSIONS_KEY, JSON.stringify(missions));
+                sessionStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(customColors));
             } catch (e) { console.warn("ミッションデータの保存に失敗しました:", e); }
         }
 
         function loadMissionsAndColors() {
             try {
-                const savedMissions = localStorage.getItem(MISSIONS_KEY);
-                const savedColors = localStorage.getItem(CUSTOM_COLORS_KEY);
+                // 以前保存された古いlocalStorageのデータがあれば消去しておく
+                localStorage.removeItem(MISSIONS_KEY);
+                localStorage.removeItem(CUSTOM_COLORS_KEY);
+
+                const savedMissions = sessionStorage.getItem(MISSIONS_KEY);
+                const savedColors = sessionStorage.getItem(CUSTOM_COLORS_KEY);
                 if (savedMissions) missions = JSON.parse(savedMissions);
                 if (savedColors) customColors = JSON.parse(savedColors);
             } catch (e) { console.warn("ミッションデータの読み込みに失敗しました:", e); }
